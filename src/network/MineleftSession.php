@@ -1,0 +1,85 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Lyrica0954\Mineleft\network;
+
+use Exception;
+use Logger;
+use Lyrica0954\Mineleft\net\IPacketPool;
+use Lyrica0954\Mineleft\net\PacketBounds;
+use Lyrica0954\Mineleft\net\SocketWrapper;
+use Lyrica0954\Mineleft\network\protocol\MineleftPacket;
+use pocketmine\utils\BinaryStream;
+use RuntimeException;
+use Socket;
+use SplQueue;
+
+class MineleftSession {
+
+	protected Socket $socket;
+
+	protected SocketWrapper $wrapper;
+
+	/**
+	 * @var SplQueue<string>
+	 */
+	protected SplQueue $queue;
+
+	protected Logger $logger;
+
+	public function __construct(Socket $socket, IPacketPool $packetPool, Logger $logger) {
+		$this->socket = $socket;
+		$this->queue = new SplQueue();
+		$this->logger = $logger;
+		$this->wrapper = new SocketWrapper($this->socket, $packetPool);
+	}
+
+	public function socketTick(): void {
+		while (($packet = $this->wrapper->readPacket()) !== null) {
+			if (!$packet instanceof MineleftPacket) {
+				$this->logger->warning("Received un-Mineleft packet. ignoring");
+				continue;
+			}
+
+			$this->handlePacket($packet);
+		}
+
+		$this->flushSendQueue();
+	}
+
+	public function handlePacket(MineleftPacket $packet): void {
+		if ($packet->bounds() !== PacketBounds::CLIENT) {
+			$this->logger->warning("Invalid bounding packet received. Ignoring");
+
+			return;
+		}
+
+		$this->logger->info("Received packet {$packet->getName()}");
+	}
+
+	public function flushSendQueue(): void {
+		for ($i = 0; $i < $this->queue->count(); $i++) {
+			$buf = $this->queue->dequeue();
+			$this->wrapper->writePacket($buf);
+
+		}
+	}
+
+	public function sendPacket(MineleftPacket $packet): void {
+		$buffer = new BinaryStream();
+
+		$buffer->putShort($packet->getProtocolId());
+
+		try {
+			$packet->encode($buffer);
+		} catch (Exception $e) {
+			throw new RuntimeException("Mineleft packet encoding failed");
+		}
+
+		$this->queue->push($buffer->getBuffer());
+
+		$this->logger->info("{$packet->getName()} sent");
+	}
+
+}
