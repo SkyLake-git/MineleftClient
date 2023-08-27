@@ -1,0 +1,7 @@
+---
+name: Mineleft
+version: 0.0.1
+main: Lyrica0954\Mineleft\Main
+api: 5.4.3
+src-namespace-prefix: Lyrica0954\Mineleft
+...
