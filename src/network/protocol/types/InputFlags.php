@@ -12,7 +12,8 @@ class InputFlags {
 	const RIGHT = 4;
 	const JUMP = 5;
 	const SNEAK = 6;
-	const UP_LEFT = 7;
-	const UP_RIGHT = 8;
-	const MISSED_SWING = 9;
+	const SPRINT = 7;
+	const UP_LEFT = 8;
+	const UP_RIGHT = 9;
+	const MISSED_SWING = 10;
 }

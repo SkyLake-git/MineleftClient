@@ -6,10 +6,12 @@ namespace Lyrica0954\Mineleft\client;
 
 use Logger;
 use Lyrica0954\Mineleft\mc\Block;
+use Lyrica0954\Mineleft\mc\BlockAttributeFlags;
 use Lyrica0954\Mineleft\network\MineleftSession;
 use Lyrica0954\Mineleft\network\MineleftSessionBootstrap;
 use Lyrica0954\Mineleft\network\protocol\PacketBlockMappings;
 use Lyrica0954\Mineleft\network\protocol\PacketConfiguration;
+use pocketmine\block\Liquid;
 use pocketmine\item\StringToItemParser;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\network\mcpe\convert\BlockStateDictionary;
@@ -62,19 +64,35 @@ class MineleftClient {
 
 			foreach ($list as $id) {
 				$stateData = TypeConverter::getInstance()->getBlockTranslator()->getBlockStateDictionary()->generateDataFromStateId($id);
-				$block = StringToItemParser::getInstance()->parse(explode(":", $stateData->getName())[1]);
+				$block = StringToItemParser::getInstance()->parse(explode(":", $stateData->getName())[1])?->getBlock();
 
 				if (is_null($block)) {
 					continue;
 				}
 
 				try {
-					$boxes = $block->getBlock()->getCollisionBoxes();
+					$block->getPosition()->x = 0;
+					$block->getPosition()->y = 0;
+					$block->getPosition()->z = 0;
+					$boxes = $block->getCollisionBoxes();
 				} catch (AssumptionFailedError) {
 					$boxes = [AxisAlignedBB::one()]; // patch for relative-bounding box
 				}
 
-				$packet->mappings[$id] = new Block($id, $stateData->getName(), $boxes);
+				$netBlock = new Block($id, $stateData->getName(), $boxes, $block->getFrictionFactor());
+
+				if ($block instanceof Liquid) {
+					$netBlock->appendAttributeFlag(BlockAttributeFlags::LIQUID);
+				}
+
+				if ($block->canClimb()) {
+					$netBlock->appendAttributeFlag(BlockAttributeFlags::CLIMBABLE);
+				}
+
+				if (str_starts_with($stateData->getName(), "minecraft:water")) {
+				}
+
+				$packet->mappings[$id] = $netBlock;
 			}
 		}
 

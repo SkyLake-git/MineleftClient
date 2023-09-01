@@ -21,6 +21,8 @@ use pocketmine\network\mcpe\protocol\types\PlayerAuthInputFlags;
 
 class MineleftPocketMineListener implements Listener {
 
+	private int $specialFlag = 0;
+
 	public function __construct(
 		protected MineleftClient $client
 	) {
@@ -58,6 +60,14 @@ class MineleftPocketMineListener implements Listener {
 		}
 
 		if ($packet instanceof PlayerAuthInputPacket) {
+			$this->specialFlag++;
+
+			if ($this->specialFlag < 40) {
+			}
+
+			if ($this->specialFlag > 40) {
+				$this->specialFlag = 0;
+			}
 			$pk = new PacketPlayerAuthInput();
 			$pk->playerUuid = $player->getUniqueId();
 			$pk->inputData = new InputData();
@@ -74,6 +84,8 @@ class MineleftPocketMineListener implements Listener {
 				$pk->inputData->appendFlag(InputFlags::JUMP);
 			if ($packet->hasFlag(PlayerAuthInputFlags::SNEAKING))
 				$pk->inputData->appendFlag(InputFlags::SNEAK);
+			if ($packet->hasFlag(PlayerAuthInputFlags::SPRINT_DOWN))
+				$pk->inputData->appendFlag(InputFlags::SPRINT);
 			if ($packet->hasFlag(PlayerAuthInputFlags::UP_LEFT))
 				$pk->inputData->appendFlag(InputFlags::UP_LEFT);
 			if ($packet->hasFlag(PlayerAuthInputFlags::UP_RIGHT))
@@ -84,6 +96,8 @@ class MineleftPocketMineListener implements Listener {
 			$pk->inputData->setDelta($packet->getDelta());
 			$pk->inputData->setMoveVecX($packet->getMoveVecX());
 			$pk->inputData->setMoveVecZ($packet->getMoveVecZ());
+			$pk->inputData->setYaw($packet->getYaw());
+			$pk->inputData->setPitch($packet->getPitch());
 
 			$this->client->getSession()->sendPacket($pk);
 

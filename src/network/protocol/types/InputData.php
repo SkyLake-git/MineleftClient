@@ -18,11 +18,17 @@ class InputData {
 
 	protected float $moveVecZ;
 
+	protected float $yaw;
+
+	protected float $pitch;
+
 	public function __construct() {
 		$this->flags = 0;
 		$this->delta = Vector3::zero();
 		$this->moveVecX = 0;
 		$this->moveVecZ = 0;
+		$this->yaw = 0;
+		$this->pitch = 0;
 	}
 
 	public function read(BinaryStream $stream): void {
@@ -30,6 +36,8 @@ class InputData {
 		$this->delta = BinaryUtils::getVec3d($stream);
 		$this->moveVecX = $stream->getFloat();
 		$this->moveVecZ = $stream->getFloat();
+		$this->yaw = $stream->getFloat();
+		$this->pitch = $stream->getFloat();
 	}
 
 	public function write(BinaryStream $stream): void {
@@ -37,6 +45,8 @@ class InputData {
 		BinaryUtils::putVec3d($stream, $this->delta);
 		$stream->putFloat($this->moveVecX);
 		$stream->putFloat($this->moveVecZ);
+		$stream->putFloat($this->yaw);
+		$stream->putFloat($this->pitch);
 	}
 
 	public function appendFlag(int $flag): void {
@@ -97,6 +107,34 @@ class InputData {
 	 */
 	public function setMoveVecZ(float $moveVecZ): void {
 		$this->moveVecZ = $moveVecZ;
+	}
+
+	/**
+	 * @return float
+	 */
+	public function getPitch(): float {
+		return $this->pitch;
+	}
+
+	/**
+	 * @param float $pitch
+	 */
+	public function setPitch(float $pitch): void {
+		$this->pitch = $pitch;
+	}
+
+	/**
+	 * @return float
+	 */
+	public function getYaw(): float {
+		return $this->yaw;
+	}
+
+	/**
+	 * @param float $yaw
+	 */
+	public function setYaw(float $yaw): void {
+		$this->yaw = $yaw;
 	}
 
 }

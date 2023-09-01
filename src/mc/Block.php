@@ -19,15 +19,46 @@ class Block {
 	 */
 	protected array $collisionBoxes;
 
+	protected float $friction;
+
+	protected int $flags;
+
+	protected BlockStateData $stateData;
+
 	/**
 	 * @param int $networkId
 	 * @param string $identifier
 	 * @param AxisAlignedBB[] $collisionBoxes
 	 */
-	public function __construct(int $networkId, string $identifier, array $collisionBoxes) {
+	public function __construct(int $networkId, string $identifier, array $collisionBoxes, float $friction = 0.6) {
 		$this->networkId = $networkId;
 		$this->identifier = $identifier;
 		$this->collisionBoxes = $collisionBoxes;
+		$this->friction = $friction;
+		$this->flags = 0;
+		$this->stateData = new BlockStateData();
+	}
+
+	/**
+	 * @return int
+	 */
+	public function getFlags(): int {
+		return $this->flags;
+	}
+
+	public function appendAttributeFlag(int $flag): void {
+		$this->flags |= (1 << $flag);
+	}
+
+	public function hasAttributeFlag(int $flag): bool {
+		return ($this->flags & (1 << $flag)) != 0;
+	}
+
+	/**
+	 * @return float
+	 */
+	public function getFriction(): float {
+		return $this->friction;
 	}
 
 	/**
@@ -66,6 +97,10 @@ class Block {
 				$stream->getDouble()
 			);
 		}
+		$this->friction = $stream->getFloat();
+		$this->flags = $stream->getInt();
+		$this->stateData = new BlockStateData();
+		$this->stateData->read($stream);
 	}
 
 	public function write(BinaryStream $stream): void {
@@ -81,5 +116,9 @@ class Block {
 			$stream->putDouble($box->maxY);
 			$stream->putDouble($box->maxZ);
 		}
+
+		$stream->putFloat($this->friction);
+		$stream->putInt($this->flags);
+		$this->stateData->write($stream);
 	}
 }
