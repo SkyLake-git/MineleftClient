@@ -9,6 +9,8 @@ use Logger;
 use Lyrica0954\Mineleft\net\IPacketPool;
 use Lyrica0954\Mineleft\net\PacketBounds;
 use Lyrica0954\Mineleft\net\SocketWrapper;
+use Lyrica0954\Mineleft\network\protocol\handler\IMineleftPacketHandler;
+use Lyrica0954\Mineleft\network\protocol\handler\NormalMineleftPacketHandler;
 use Lyrica0954\Mineleft\network\protocol\MineleftPacket;
 use pocketmine\utils\BinaryStream;
 use RuntimeException;
@@ -22,17 +24,34 @@ class MineleftSession {
 	protected SocketWrapper $wrapper;
 
 	/**
-	 * @var SplQueue<string>
+	 * @var SplQueue<int, string>
 	 */
 	protected SplQueue $queue;
 
 	protected Logger $logger;
+
+	protected IMineleftPacketHandler $packetHandler;
 
 	public function __construct(Socket $socket, IPacketPool $packetPool, Logger $logger) {
 		$this->socket = $socket;
 		$this->queue = new SplQueue();
 		$this->logger = $logger;
 		$this->wrapper = new SocketWrapper($this->socket, $packetPool);
+		$this->packetHandler = new NormalMineleftPacketHandler($this);
+	}
+
+	/**
+	 * @return Logger
+	 */
+	public function getLogger(): Logger {
+		return $this->logger;
+	}
+
+	/**
+	 * @return IMineleftPacketHandler
+	 */
+	public function getPacketHandler(): IMineleftPacketHandler {
+		return $this->packetHandler;
 	}
 
 	public function socketTick(): void {
@@ -56,13 +75,14 @@ class MineleftSession {
 		}
 
 		$this->logger->info("Received packet {$packet->getName()}");
+
+		$packet->callHandler($this->packetHandler);
 	}
 
 	public function flushSendQueue(): void {
 		for ($i = 0; $i < $this->queue->count(); $i++) {
 			$buf = $this->queue->dequeue();
 			$this->wrapper->writePacket($buf);
-
 		}
 	}
 
@@ -78,8 +98,6 @@ class MineleftSession {
 		}
 
 		$this->queue->push($buffer->getBuffer());
-
-		$this->logger->info("{$packet->getName()} sent");
 	}
 
 }
