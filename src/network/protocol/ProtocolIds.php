@@ -12,5 +12,8 @@ class ProtocolIds {
 	const CONFIGURATION = 3;
 	const PLAYER_AUTH_INPUT = 4;
 	const BLOCK_MAPPINGS = 5;
+	const SET_PLAYER_FLAGS = 6;
+	const SET_PLAYER_ATTRIBUTE = 7;
+	const PLAYER_VIOLATION = 8;
 
 }
