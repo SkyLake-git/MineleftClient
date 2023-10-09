@@ -4,40 +4,85 @@ declare(strict_types=1);
 
 namespace Lyrica0954\Mineleft\client;
 
+use Lyrica0954\Mineleft\client\processor\PlayerAttributeProcessor;
+use Lyrica0954\Mineleft\client\task\ChunkSerializingTask;
+use Lyrica0954\Mineleft\network\protocol\MineleftPacket;
 use Lyrica0954\Mineleft\network\protocol\PacketLevelChunk;
 use Lyrica0954\Mineleft\network\protocol\PacketPlayerAuthInput;
 use Lyrica0954\Mineleft\network\protocol\PacketPlayerLogin;
-use Lyrica0954\Mineleft\network\protocol\PacketPlayerTeleport;
+use Lyrica0954\Mineleft\network\protocol\types\ChunkSendingMethod;
 use Lyrica0954\Mineleft\network\protocol\types\InputData;
 use Lyrica0954\Mineleft\network\protocol\types\InputFlags;
-use Lyrica0954\Mineleft\network\protocol\types\MineleftChunkSerializer;
 use Lyrica0954\Mineleft\network\protocol\types\PlayerInfo;
+use Lyrica0954\Mineleft\utils\WorldUtils;
+use pocketmine\block\Air;
 use pocketmine\event\Listener;
 use pocketmine\event\player\PlayerJoinEvent;
 use pocketmine\event\server\DataPacketReceiveEvent;
+use pocketmine\event\server\DataPacketSendEvent;
 use pocketmine\event\world\ChunkLoadEvent;
+use pocketmine\event\world\WorldLoadEvent;
+use pocketmine\network\mcpe\convert\TypeConverter;
+use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\PlayerAuthInputPacket;
+use pocketmine\network\mcpe\protocol\SetActorDataPacket;
+use pocketmine\network\mcpe\protocol\types\entity\Attribute;
 use pocketmine\network\mcpe\protocol\types\PlayerAuthInputFlags;
+use pocketmine\network\mcpe\protocol\UpdateAttributesPacket;
+use pocketmine\world\World;
+use WeakMap;
 
 class MineleftPocketMineListener implements Listener {
+	protected WeakMap $lastSprintInput;
+
+	protected WeakMap $lastSneakInput;
+
+	protected WeakMap $lastPosition;
 
 	private int $specialFlag = 0;
+
+	/**
+	 * @var WeakMap<NetworkSession, array<int, MineleftPacket[]>>
+	 */
+	private WeakMap $packetFutures;
+
+	/**
+	 * @var WeakMap<NetworkSession, int>
+	 */
+	private WeakMap $firstAuthInputTick;
 
 	public function __construct(
 		protected MineleftClient $client
 	) {
+		$this->lastSprintInput = new WeakMap();
+		$this->lastSneakInput = new WeakMap();
+		$this->lastPosition = new WeakMap();
+		$this->packetFutures = new WeakMap();
+		$this->firstAuthInputTick = new WeakMap();
 	}
 
 	public function onChunkLoad(ChunkLoadEvent $event): void {
-		$payload = MineleftChunkSerializer::serialize($event->getChunk(), $event->getChunkX(), $event->getChunkZ());
+		if ($this->client->getChunkSendingMethod() === ChunkSendingMethod::REALTIME) {
+			$task = new ChunkSerializingTask($event->getChunk(), function(string $payload) use ($event): void {
+				$packet = new PacketLevelChunk();
+				$packet->x = $event->getChunkX();
+				$packet->z = $event->getChunkZ();
+				$packet->extraPayload = $payload;
+				$packet->worldName = $event->getWorld()->getFolderName();
 
-		$packet = new PacketLevelChunk();
-		$packet->x = $event->getChunkX();
-		$packet->z = $event->getChunkZ();
-		$packet->extraPayload = $payload;
-		$packet->worldName = $event->getWorld()->getFolderName();
+				$this->client->getSession()->sendPacket($packet);
+			});
 
-		$this->client->getSession()->sendPacket($packet);
+			$this->client->getPMMPServer()->getAsyncPool()->submitTask($task);
+		}
+	}
+
+	public function onWorldLoad(WorldLoadEvent $event): void {
+
+	}
+
+	public function processWorld(World $world): void {
+
 	}
 
 	public function onPlayerJoin(PlayerJoinEvent $event): void {
@@ -51,6 +96,25 @@ class MineleftPocketMineListener implements Listener {
 		$this->client->getSession()->sendPacket($packet);
 	}
 
+	public function onDataPacketSend(DataPacketSendEvent $event): void {
+		$packets = $event->getPackets();
+
+		foreach ($packets as $packet) {
+			if (!$packet instanceof SetActorDataPacket && !$packet instanceof UpdateAttributesPacket) { // currently, mineleft only need SetActorDataPacket, UpdateAttributesPacket
+				continue;
+			}
+
+			foreach ($event->getTargets() as $target) {
+				$this->client->getPacketPairing($target)?->addUnconfirm($packet);
+			}
+		}
+	}
+
+	/**
+	 * @param DataPacketReceiveEvent $event
+	 * @return void
+	 * @priority MONITOR
+	 */
 	public function onDataPacketReceive(DataPacketReceiveEvent $event): void {
 		$packet = $event->getPacket();
 		$player = $event->getOrigin()->getPlayer();
@@ -59,18 +123,69 @@ class MineleftPocketMineListener implements Listener {
 			return;
 		}
 
+		if (!$player->isOnline()) {
+			return;
+		}
+
+		if (!$player->spawned) {
+			return;
+		}
+
 		if ($packet instanceof PlayerAuthInputPacket) {
-			$this->specialFlag++;
-
-			if ($this->specialFlag < 40) {
+			if (!isset($this->firstAuthInputTick[$player->getNetworkSession()])) {
+				$pairing = $this->client->loadPacketPairing($player->getNetworkSession(), $packet->getTick());
+				$this->firstAuthInputTick[$player->getNetworkSession()] = $pairing->getTick();
+				PlayerAttributeProcessor::process($this->client, $player->getNetworkSession(), [new Attribute(\pocketmine\entity\Attribute::MOVEMENT_SPEED, 0, 100, 0.1, 0.1, [])]);
 			}
 
-			if ($this->specialFlag > 40) {
-				$this->specialFlag = 0;
-			}
 			$pk = new PacketPlayerAuthInput();
 			$pk->playerUuid = $player->getUniqueId();
 			$pk->inputData = new InputData();
+			$pk->requestedPosition = $packet->getPosition();
+
+			$position = $packet->getPosition();
+			$diff = $packet->getPosition()->subtractVector($this->lastPosition[$player] ?? $position);
+			$delta = $packet->getDelta();
+			$nearbyBlocks = WorldUtils::getNearbyBlocks($player->getWorld(), $player->getBoundingBox()->expandedCopy(0.75, 1.5, 0.75)->offset($diff->x, $diff->y, $diff->z)->addCoord($delta->x, $delta->y, $delta->z));
+
+			$this->lastPosition[$player] = $packet->getPosition();
+			$networkNearbyBlocks = [];
+			foreach ($nearbyBlocks as $block) {
+				if ($block instanceof Air) {
+					continue;
+				}
+				$pos = $block->getPosition();
+				$networkNearbyBlocks[morton3d_encode($pos->x, $pos->y, $pos->z)] = TypeConverter::getInstance()->getBlockTranslator()->internalIdToNetworkId($block->getStateId());
+			}
+
+			$pk->nearbyBlocks = $networkNearbyBlocks;
+
+			$resolveOnOffInputFlags = function(int $inputFlags, int $startFlag, int $stopFlag): ?bool {
+				$enabled = ($inputFlags & (1 << $startFlag)) !== 0;
+				$disabled = ($inputFlags & (1 << $stopFlag)) !== 0;
+				if ($enabled !== $disabled) {
+					return $enabled;
+				}
+
+				return null;
+			};
+
+			$toggleSprint = $resolveOnOffInputFlags($packet->getInputFlags(), PlayerAuthInputFlags::START_SPRINTING, PlayerAuthInputFlags::STOP_SPRINTING);
+			$toggleSneaking = $resolveOnOffInputFlags($packet->getInputFlags(), PlayerAuthInputFlags::START_SNEAKING, PlayerAuthInputFlags::STOP_SNEAKING);
+
+			$sneaking = $this->lastSneakInput[$player] ?? null;
+			$sprinting = $this->lastSprintInput[$player] ?? null;
+
+			// ON -> -1 tick
+			// OFF -> 0 tick
+
+			if ($toggleSneaking !== null) {
+				$sneaking = $this->lastSneakInput[$player] = $toggleSneaking;
+			}
+
+			if ($toggleSprint !== null) {
+				$sprinting = $this->lastSprintInput[$player] = $toggleSprint;
+			}
 
 			if ($packet->hasFlag(PlayerAuthInputFlags::UP))
 				$pk->inputData->appendFlag(InputFlags::UP);
@@ -80,11 +195,11 @@ class MineleftPocketMineListener implements Listener {
 				$pk->inputData->appendFlag(InputFlags::LEFT);
 			if ($packet->hasFlag(PlayerAuthInputFlags::RIGHT))
 				$pk->inputData->appendFlag(InputFlags::RIGHT);
-			if ($packet->hasFlag(InputFlags::JUMP))
+			if ($packet->hasFlag(PlayerAuthInputFlags::JUMPING))
 				$pk->inputData->appendFlag(InputFlags::JUMP);
-			if ($packet->hasFlag(PlayerAuthInputFlags::SNEAKING))
+			if ($sneaking)
 				$pk->inputData->appendFlag(InputFlags::SNEAK);
-			if ($packet->hasFlag(PlayerAuthInputFlags::SPRINT_DOWN))
+			if ($sprinting)
 				$pk->inputData->appendFlag(InputFlags::SPRINT);
 			if ($packet->hasFlag(PlayerAuthInputFlags::UP_LEFT))
 				$pk->inputData->appendFlag(InputFlags::UP_LEFT);
@@ -100,13 +215,6 @@ class MineleftPocketMineListener implements Listener {
 			$pk->inputData->setPitch($packet->getPitch());
 
 			$this->client->getSession()->sendPacket($pk);
-
-			$pkMove = new PacketPlayerTeleport();
-			$pkMove->playerUuid = $player->getUniqueId();
-			$pkMove->worldName = $player->getWorld()->getFolderName();
-			$pkMove->position = $player->getPosition()->asVector3();
-
-			$this->client->getSession()->sendPacket($pkMove);
 		}
 	}
 }
