@@ -15,6 +15,8 @@ class PacketBlockMappings extends MineleftPacket {
 	 */
 	public array $mappings;
 
+	public int $nullBlockNetworkId;
+
 	public function getProtocolId(): int {
 		return ProtocolIds::BLOCK_MAPPINGS;
 	}
@@ -25,6 +27,8 @@ class PacketBlockMappings extends MineleftPacket {
 		foreach ($this->mappings as $block) {
 			$block->write($out);
 		}
+
+		$out->putInt($this->nullBlockNetworkId);
 	}
 
 	public function decode(BinaryStream $in): void {
@@ -36,6 +40,8 @@ class PacketBlockMappings extends MineleftPacket {
 
 			$this->mappings[$block->getNetworkId()] = $block;
 		}
+
+		$this->nullBlockNetworkId = $in->getInt();
 	}
 
 	public function bounds(): PacketBounds {
