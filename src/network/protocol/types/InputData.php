@@ -32,7 +32,7 @@ class InputData {
 	}
 
 	public function read(BinaryStream $stream): void {
-		$this->flags = $stream->getInt();
+		$this->flags = $stream->getLong();
 		$this->delta = BinaryUtils::getVec3d($stream);
 		$this->moveVecX = $stream->getFloat();
 		$this->moveVecZ = $stream->getFloat();
@@ -41,7 +41,7 @@ class InputData {
 	}
 
 	public function write(BinaryStream $stream): void {
-		$stream->putInt($this->flags);
+		$stream->putLong($this->flags);
 		BinaryUtils::putVec3d($stream, $this->delta);
 		$stream->putFloat($this->moveVecX);
 		$stream->putFloat($this->moveVecZ);
