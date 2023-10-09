@@ -21,7 +21,7 @@ class SocketWrapper {
 	}
 
 	public function readPacket(): ?Packet {
-		$buffer = @socket_read($this->socket, 65535, 0);
+		$buffer = @socket_read($this->socket, 65535);
 
 		if ($buffer === false) {
 			$errno = socket_last_error($this->socket);
