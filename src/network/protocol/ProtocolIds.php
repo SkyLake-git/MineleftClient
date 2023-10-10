@@ -15,5 +15,6 @@ class ProtocolIds {
 	const SET_PLAYER_FLAGS = 6;
 	const SET_PLAYER_ATTRIBUTE = 7;
 	const PLAYER_VIOLATION = 8;
+	const SET_PLAYER_MOTION = 9;
 
 }
