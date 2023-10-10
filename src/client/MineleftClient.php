@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace Lyrica0954\Mineleft\client;
 
 use Logger;
-use Lyrica0954\Mineleft\client\processor\PlayerAttributeProcessor;
-use Lyrica0954\Mineleft\client\processor\PlayerFlagsProcessor;
-use Lyrica0954\Mineleft\Main;
 use Lyrica0954\Mineleft\mc\Block;
 use Lyrica0954\Mineleft\mc\BlockAttributeFlags;
 use Lyrica0954\Mineleft\network\MineleftSession;
@@ -22,10 +19,6 @@ use pocketmine\math\AxisAlignedBB;
 use pocketmine\network\mcpe\convert\BlockStateDictionary;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\NetworkSession;
-use pocketmine\network\mcpe\protocol\ClientboundPacket;
-use pocketmine\network\mcpe\protocol\SetActorDataPacket;
-use pocketmine\network\mcpe\protocol\UpdateAttributesPacket;
-use pocketmine\scheduler\ClosureTask;
 use pocketmine\Server;
 use pocketmine\snooze\SleeperHandlerEntry;
 use pocketmine\utils\AssumptionFailedError;
@@ -40,11 +33,6 @@ class MineleftClient {
 	protected MineleftPocketMineListener $listener;
 
 	protected Server $pocketmine;
-
-	/**
-	 * @var WeakMap<NetworkSession, PacketPairing>
-	 */
-	protected WeakMap $packetPairings;
 
 	/**
 	 * @var WeakMap<NetworkSession, ActorStateStore>
@@ -70,7 +58,6 @@ class MineleftClient {
 	) {
 		$this->pocketmine = $server;
 		$this->tickHooks = new ObjectSet();
-		$this->packetPairings = new WeakMap();
 		$this->actorStateStore = new WeakMap();
 		$this->sleeperHandlerEntry = null;
 		$this->chunkSendingMethod = ChunkSendingMethod::ALTERNATE;
@@ -86,24 +73,6 @@ class MineleftClient {
 		$this->session->sendPacket($conf);
 
 		$this->sendBlockMappings();
-
-
-		$this->sleeperHandlerEntry = $this->pocketmine->getTickSleeper()->addNotifier(function(): void {
-			foreach ($this->packetPairings as $pairing) {
-				$pairing->requestPairing();
-				$pairing->incrementTick();
-			}
-		});
-
-
-		$notifier = $this->sleeperHandlerEntry->createNotifier();
-		$notifier->wakeupSleeper();
-
-		Main::getInstance()->getScheduler()->scheduleRepeatingTask(
-			new ClosureTask(function() use ($notifier): void {
-				$notifier->wakeupSleeper();
-			}), 1
-		);
 	}
 
 	protected function sendBlockMappings(): void {
@@ -222,37 +191,6 @@ class MineleftClient {
 
 	public function close(): void {
 		$this->pocketmine->getTickSleeper()->removeNotifier($this->sleeperHandlerEntry->getNotifierId());
-	}
-
-	public function getPacketPairing(NetworkSession $session): ?PacketPairing {
-		return $this->packetPairings[$session] ?? null;
-	}
-
-	public function loadPacketPairing(NetworkSession $session, int $tick): PacketPairing {
-		$packetPairing = new PacketPairing($session, Main::getLatencyHandler(), $tick);
-		$this->packetPairings[$session] = $packetPairing;
-		$packetPairing->getConfirmListeners()->add(function(int $tick, array $packets) use ($session, $packetPairing): void {
-			foreach ($packets as $pk) {
-				$this->handlePacketConfirm($session, $pk);
-			}
-		});
-
-		return $packetPairing;
-	}
-
-	private function handlePacketConfirm(NetworkSession $session, ClientboundPacket $packet): void {
-		if ($packet instanceof SetActorDataPacket) {
-			$this->getActorStateStore($session)->updateMetadata($packet->actorRuntimeId, $packet->metadata);
-
-			if ($packet->actorRuntimeId === $session->getPlayer()?->getId()) {
-				PlayerFlagsProcessor::process($this, $session);
-			}
-		} elseif ($packet instanceof UpdateAttributesPacket) {
-			$this->getActorStateStore($session)->updateAttribute($packet->actorRuntimeId, $packet->entries);
-			if ($packet->actorRuntimeId === $session->getPlayer()?->getId()) {
-				PlayerAttributeProcessor::process($this, $session, $packet->entries);
-			}
-		}
 	}
 
 	public function getActorStateStore(NetworkSession $session): ActorStateStore {

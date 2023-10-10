@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Lyrica0954\Mineleft\client;
 
+use Closure;
 use Lyrica0954\Mineleft\client\processor\PlayerAttributeProcessor;
+use Lyrica0954\Mineleft\client\processor\PlayerFlagsProcessor;
+use Lyrica0954\Mineleft\client\processor\PlayerMotionProcessor;
 use Lyrica0954\Mineleft\client\task\ChunkSerializingTask;
-use Lyrica0954\Mineleft\network\protocol\MineleftPacket;
+use Lyrica0954\Mineleft\Main;
 use Lyrica0954\Mineleft\network\protocol\PacketLevelChunk;
 use Lyrica0954\Mineleft\network\protocol\PacketPlayerAuthInput;
 use Lyrica0954\Mineleft\network\protocol\PacketPlayerLogin;
@@ -24,8 +27,11 @@ use pocketmine\event\world\ChunkLoadEvent;
 use pocketmine\event\world\WorldLoadEvent;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\NetworkSession;
+use pocketmine\network\mcpe\protocol\DataPacket;
+use pocketmine\network\mcpe\protocol\NetworkStackLatencyPacket;
 use pocketmine\network\mcpe\protocol\PlayerAuthInputPacket;
 use pocketmine\network\mcpe\protocol\SetActorDataPacket;
+use pocketmine\network\mcpe\protocol\SetActorMotionPacket;
 use pocketmine\network\mcpe\protocol\types\entity\Attribute;
 use pocketmine\network\mcpe\protocol\types\PlayerAuthInputFlags;
 use pocketmine\network\mcpe\protocol\UpdateAttributesPacket;
@@ -39,13 +45,6 @@ class MineleftPocketMineListener implements Listener {
 
 	protected WeakMap $lastPosition;
 
-	private int $specialFlag = 0;
-
-	/**
-	 * @var WeakMap<NetworkSession, array<int, MineleftPacket[]>>
-	 */
-	private WeakMap $packetFutures;
-
 	/**
 	 * @var WeakMap<NetworkSession, int>
 	 */
@@ -57,7 +56,6 @@ class MineleftPocketMineListener implements Listener {
 		$this->lastSprintInput = new WeakMap();
 		$this->lastSneakInput = new WeakMap();
 		$this->lastPosition = new WeakMap();
-		$this->packetFutures = new WeakMap();
 		$this->firstAuthInputTick = new WeakMap();
 	}
 
@@ -100,12 +98,36 @@ class MineleftPocketMineListener implements Listener {
 		$packets = $event->getPackets();
 
 		foreach ($packets as $packet) {
-			if (!$packet instanceof SetActorDataPacket && !$packet instanceof UpdateAttributesPacket) { // currently, mineleft only need SetActorDataPacket, UpdateAttributesPacket
-				continue;
-			}
+			$doActorFilteredPairing = function(DataPacket $packet, Closure $onResponse, int $actorId) use ($event): void {
+				foreach ($event->getTargets() as $target) {
+					if ($target->getPlayer()?->getId() !== $actorId) {
+						continue;
+					}
+					Main::getLatencyHandler()->request($target, $onResponse);
+				}
+			};
 
-			foreach ($event->getTargets() as $target) {
-				$this->client->getPacketPairing($target)?->addUnconfirm($packet);
+			if ($packet instanceof SetActorDataPacket) {
+				$doActorFilteredPairing(
+					$packet,
+					function(NetworkSession $session, NetworkStackLatencyPacket $pk) use ($packet): void {
+						$this->client->getActorStateStore($session)->updateMetadata($packet->actorRuntimeId, $packet->metadata);
+						PlayerFlagsProcessor::process($this->client, $session);
+					},
+					$packet->actorRuntimeId
+				);
+			} elseif ($packet instanceof UpdateAttributesPacket) {
+				$doActorFilteredPairing(
+					$packet,
+					fn(NetworkSession $session, NetworkStackLatencyPacket $pk) => PlayerAttributeProcessor::process($this->client, $session, $packet->entries),
+					$packet->actorRuntimeId
+				);
+			} elseif ($packet instanceof SetActorMotionPacket) {
+				$doActorFilteredPairing(
+					$packet,
+					fn(NetworkSession $session, NetworkStackLatencyPacket $pk) => PlayerMotionProcessor::process($this->client, $session, $packet->motion),
+					$packet->actorRuntimeId
+				);
 			}
 		}
 	}
@@ -133,8 +155,7 @@ class MineleftPocketMineListener implements Listener {
 
 		if ($packet instanceof PlayerAuthInputPacket) {
 			if (!isset($this->firstAuthInputTick[$player->getNetworkSession()])) {
-				$pairing = $this->client->loadPacketPairing($player->getNetworkSession(), $packet->getTick());
-				$this->firstAuthInputTick[$player->getNetworkSession()] = $pairing->getTick();
+				$this->firstAuthInputTick[$player->getNetworkSession()] = $packet->getTick();
 				PlayerAttributeProcessor::process($this->client, $player->getNetworkSession(), [new Attribute(\pocketmine\entity\Attribute::MOVEMENT_SPEED, 0, 100, 0.1, 0.1, [])]);
 			}
 

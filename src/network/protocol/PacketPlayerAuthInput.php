@@ -34,16 +34,10 @@ class PacketPlayerAuthInput extends MineleftPacket {
 
 		$this->inputData->write($out);
 		BinaryUtils::putVec3d($out, $this->requestedPosition);
-
-		$withNearbyBlocks = count($this->nearbyBlocks) > 0;
-
-		$out->putBool($withNearbyBlocks);
-		if ($withNearbyBlocks) {
-			$out->putInt(count($this->nearbyBlocks));
-			foreach ($this->nearbyBlocks as $code => $block) {
-				$out->putLong($code);
-				$out->putInt($block);
-			}
+		$out->putInt(count($this->nearbyBlocks));
+		foreach ($this->nearbyBlocks as $code => $block) {
+			$out->putLong($code);
+			$out->putInt($block);
 		}
 	}
 
@@ -57,12 +51,9 @@ class PacketPlayerAuthInput extends MineleftPacket {
 		$this->requestedPosition = BinaryUtils::getVec3d($in);
 
 		$this->nearbyBlocks = [];
-		$withNearbyBlocks = $in->getBool();
-		if ($withNearbyBlocks) {
-			$count = $in->getInt();
-			for ($i = 0; $i < $count; $i++) {
-				$this->nearbyBlocks[$in->getLong()] = $in->getInt();
-			}
+		$count = $in->getInt();
+		for ($i = 0; $i < $count; $i++) {
+			$this->nearbyBlocks[$in->getLong()] = $in->getInt();
 		}
 	}
 
