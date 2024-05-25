@@ -5,62 +5,62 @@ declare(strict_types=1);
 namespace Lyrica0954\Mineleft\client;
 
 use Closure;
+use LogicException;
 use Lyrica0954\Mineleft\client\processor\PlayerAttributeProcessor;
+use Lyrica0954\Mineleft\client\processor\PlayerEffectProcessor;
 use Lyrica0954\Mineleft\client\processor\PlayerFlagsProcessor;
 use Lyrica0954\Mineleft\client\processor\PlayerMotionProcessor;
 use Lyrica0954\Mineleft\client\task\ChunkSerializingTask;
 use Lyrica0954\Mineleft\Main;
 use Lyrica0954\Mineleft\network\protocol\PacketLevelChunk;
-use Lyrica0954\Mineleft\network\protocol\PacketPlayerAuthInput;
 use Lyrica0954\Mineleft\network\protocol\PacketPlayerLogin;
 use Lyrica0954\Mineleft\network\protocol\types\ChunkSendingMethod;
-use Lyrica0954\Mineleft\network\protocol\types\InputData;
-use Lyrica0954\Mineleft\network\protocol\types\InputFlags;
 use Lyrica0954\Mineleft\network\protocol\types\PlayerInfo;
-use Lyrica0954\Mineleft\utils\WorldUtils;
-use pocketmine\block\Air;
+use Lyrica0954\Mineleft\player\PlayerSession;
+use Lyrica0954\Mineleft\player\PlayerSessionManager;
 use pocketmine\event\Listener;
 use pocketmine\event\player\PlayerJoinEvent;
+use pocketmine\event\player\PlayerQuitEvent;
 use pocketmine\event\server\DataPacketReceiveEvent;
 use pocketmine\event\server\DataPacketSendEvent;
 use pocketmine\event\world\ChunkLoadEvent;
 use pocketmine\event\world\WorldLoadEvent;
-use pocketmine\network\mcpe\convert\TypeConverter;
-use pocketmine\network\mcpe\NetworkSession;
+use pocketmine\network\mcpe\protocol\ClientboundPacket;
 use pocketmine\network\mcpe\protocol\DataPacket;
-use pocketmine\network\mcpe\protocol\NetworkStackLatencyPacket;
+use pocketmine\network\mcpe\protocol\MobEffectPacket;
 use pocketmine\network\mcpe\protocol\PlayerAuthInputPacket;
 use pocketmine\network\mcpe\protocol\SetActorDataPacket;
 use pocketmine\network\mcpe\protocol\SetActorMotionPacket;
-use pocketmine\network\mcpe\protocol\types\entity\Attribute;
-use pocketmine\network\mcpe\protocol\types\PlayerAuthInputFlags;
+use pocketmine\network\mcpe\protocol\StartGamePacket;
+use pocketmine\network\mcpe\protocol\types\PlayerMovementSettings;
+use pocketmine\network\mcpe\protocol\types\PlayerMovementType;
 use pocketmine\network\mcpe\protocol\UpdateAttributesPacket;
+use pocketmine\player\Player;
 use pocketmine\world\World;
-use WeakMap;
+use T;
 
 class MineleftPocketMineListener implements Listener {
-	protected WeakMap $lastSprintInput;
-
-	protected WeakMap $lastSneakInput;
-
-	protected WeakMap $lastPosition;
 
 	/**
-	 * @var WeakMap<NetworkSession, int>
+	 * @var array<int, Player>
 	 */
-	private WeakMap $firstAuthInputTick;
+	private array $playerByActorIdMap;
+
+	/**
+	 * @var array<string, int>
+	 */
+	private array $beforeTickIdsMap;
 
 	public function __construct(
 		protected MineleftClient $client
 	) {
-		$this->lastSprintInput = new WeakMap();
-		$this->lastSneakInput = new WeakMap();
-		$this->lastPosition = new WeakMap();
-		$this->firstAuthInputTick = new WeakMap();
+		$this->playerByActorIdMap = [];
+		$this->beforeTickIdsMap = [];
 	}
 
 	public function onChunkLoad(ChunkLoadEvent $event): void {
 		if ($this->client->getChunkSendingMethod() === ChunkSendingMethod::REALTIME) {
+			print_r("sending chunk\n");
 			$task = new ChunkSerializingTask($event->getChunk(), function(string $payload) use ($event): void {
 				$packet = new PacketLevelChunk();
 				$packet->x = $event->getChunkX();
@@ -92,41 +92,145 @@ class MineleftPocketMineListener implements Listener {
 		$packet->position = $player->getPosition()->asVector3();
 
 		$this->client->getSession()->sendPacket($packet);
+
+		$this->playerByActorIdMap[$player->getId()] = $player;
 	}
 
+	public function onPlayerQuit(PlayerQuitEvent $event): void {
+		unset($this->playerByActorIdMap[$event->getPlayer()->getId()]);
+	}
+
+	/**
+	 * @param DataPacketSendEvent $event
+	 * @return void
+	 * @priority LOWEST
+	 */
 	public function onDataPacketSend(DataPacketSendEvent $event): void {
 		$packets = $event->getPackets();
 
 		foreach ($packets as $packet) {
-			$doActorFilteredPairing = function(DataPacket $packet, Closure $onResponse, int $actorId) use ($event): void {
-				foreach ($event->getTargets() as $target) {
-					if ($target->getPlayer()?->getId() !== $actorId) {
-						continue;
+			if ($packet instanceof StartGamePacket) {
+				$packet->playerMovementSettings = new PlayerMovementSettings(
+					PlayerMovementType::SERVER_AUTHORITATIVE_V2_REWIND,
+					40,
+					false
+				);
+			}
+
+			/**
+			 * @template T of ClientboundPacket&DataPacket
+			 * @param T $packet
+			 * @param Closure(T): void $applier
+			 * @param Closure(): void $onAck
+			 * @param (Closure(T): T)|null $cloner
+			 * @return void
+			 */
+			$hackDisableBroadcastingPackets = function(mixed &$packet, Closure $applier, Closure $onAck, ?Closure $cloner = null) use ($event): void {
+				$cloner ??= function(mixed $packet): mixed {
+					return clone $packet;
+				};
+				if (count($event->getTargets()) > 1) {
+					$event->cancel();
+
+					foreach ($event->getTargets() as $session) {
+						if ($session->getPlayer() === null) {
+							return;
+						}
+
+						$playerSession = PlayerSessionManager::getSession($session->getPlayer());
+
+						foreach ($event->getPackets() as $packet) {
+							$newPacket = $cloner($packet);
+							$applier($newPacket, $playerSession);
+							$session->sendDataPacketWithReceipt(
+								$newPacket
+							)->onCompletion(fn() => $onAck($playerSession), function(): void {
+								throw new LogicException("This should not be happen");
+							});
+						}
 					}
-					Main::getLatencyHandler()->request($target, $onResponse);
+				} else {
+					$target = $event->getTargets()[array_key_first($event->getTargets())];
+					if ($target->getPlayer() === null) {
+						return;
+					}
+
+					$playerSession = PlayerSessionManager::getSession($target->getPlayer());
+					// ホントは sendDataPacketWithReceipt がいいけど、このイベントからそれを変更する術がない
+					Main::getLatencyHandler()->request($target, function() use ($onAck, $playerSession): void {
+						$onAck($playerSession);
+					});
+					$applier($packet, $playerSession);
 				}
 			};
 
 			if ($packet instanceof SetActorDataPacket) {
-				$doActorFilteredPairing(
+				$hackDisableBroadcastingPackets(
 					$packet,
-					function(NetworkSession $session, NetworkStackLatencyPacket $pk) use ($packet): void {
-						$this->client->getActorStateStore($session)->updateMetadata($packet->actorRuntimeId, $packet->metadata);
-						PlayerFlagsProcessor::process($this->client, $session);
+					function(mixed $packet, PlayerSession $session): void {
+						/**
+						 * @var SetActorDataPacket $packet
+						 */
+
+						$packet->tick = $session->getTickId();
 					},
-					$packet->actorRuntimeId
+					function(PlayerSession $session) use ($packet): void {
+						$session->getActorStateStore()->updateMetadata($packet->actorRuntimeId, $packet->metadata);
+
+						if ($packet->actorRuntimeId === $session->getPlayer()->getId()) {
+							PlayerFlagsProcessor::process($this->client, $session);
+						}
+					},
 				);
+
 			} elseif ($packet instanceof UpdateAttributesPacket) {
-				$doActorFilteredPairing(
+				$hackDisableBroadcastingPackets(
 					$packet,
-					fn(NetworkSession $session, NetworkStackLatencyPacket $pk) => PlayerAttributeProcessor::process($this->client, $session, $packet->entries),
-					$packet->actorRuntimeId
+					function(mixed $packet, PlayerSession $session): void {
+						/**
+						 * @var UpdateAttributesPacket $packet
+						 */
+
+						$packet->tick = $session->getTickId();
+					},
+					function(PlayerSession $session) use ($packet): void {
+						if ($packet->actorRuntimeId === $session->getPlayer()->getId()) {
+							PlayerAttributeProcessor::process($this->client, $session, $packet->entries);
+						}
+					}
+
 				);
 			} elseif ($packet instanceof SetActorMotionPacket) {
-				$doActorFilteredPairing(
+				$hackDisableBroadcastingPackets(
 					$packet,
-					fn(NetworkSession $session, NetworkStackLatencyPacket $pk) => PlayerMotionProcessor::process($this->client, $session, $packet->motion),
-					$packet->actorRuntimeId
+					function(mixed $packet, PlayerSession $session): void {
+						/**
+						 * @var SetActorMotionPacket $packet
+						 */
+
+						$packet->tick = $session->getTickId();
+					},
+					function(PlayerSession $session) use ($packet): void {
+						if ($packet->actorRuntimeId === $session->getPlayer()->getId()) {
+							PlayerMotionProcessor::process($this->client, $session, $packet->motion);
+						}
+					}
+				);
+			} elseif ($packet instanceof MobEffectPacket) {
+				$hackDisableBroadcastingPackets(
+					$packet,
+					function(mixed $packet, PlayerSession $session): void {
+						/**
+						 * @var MobEffectPacket $packet
+						 */
+
+						$packet->tick = $session->getTickId();
+					},
+					function(PlayerSession $session) use ($packet): void {
+						if ($packet->actorRuntimeId === $session->getPlayer()->getId()) {
+							PlayerEffectProcessor::process($this->client, $session, $packet->effectId, $packet->amplifier, $packet->eventId);
+						}
+					}
 				);
 			}
 		}
@@ -141,101 +245,22 @@ class MineleftPocketMineListener implements Listener {
 		$packet = $event->getPacket();
 		$player = $event->getOrigin()->getPlayer();
 
-		if (is_null($player)) {
-			return;
-		}
-
-		if (!$player->isOnline()) {
-			return;
-		}
-
-		if (!$player->spawned) {
-			return;
-		}
-
 		if ($packet instanceof PlayerAuthInputPacket) {
-			if (!isset($this->firstAuthInputTick[$player->getNetworkSession()])) {
-				$this->firstAuthInputTick[$player->getNetworkSession()] = $packet->getTick();
-				PlayerAttributeProcessor::process($this->client, $player->getNetworkSession(), [new Attribute(\pocketmine\entity\Attribute::MOVEMENT_SPEED, 0, 100, 0.1, 0.1, [])]);
+			$uuid = $event->getOrigin()->getPlayerInfo()->getUuid()->toString();
+			if (is_null($player) || !$player->isOnline() || !$player->spawned) {
+				$this->beforeTickIdsMap[$uuid] ??= 0;
+				$this->beforeTickIdsMap[$uuid]++;
+
+				return;
 			}
 
-			$pk = new PacketPlayerAuthInput();
-			$pk->playerUuid = $player->getUniqueId();
-			$pk->inputData = new InputData();
-			$pk->requestedPosition = $packet->getPosition();
-
-			$position = $packet->getPosition();
-			$diff = $packet->getPosition()->subtractVector($this->lastPosition[$player] ?? $position);
-			$delta = $packet->getDelta();
-			$nearbyBlocks = WorldUtils::getNearbyBlocks($player->getWorld(), $player->getBoundingBox()->expandedCopy(0.75, 1.5, 0.75)->offset($diff->x, $diff->y, $diff->z)->addCoord($delta->x, $delta->y, $delta->z));
-
-			$this->lastPosition[$player] = $packet->getPosition();
-			$networkNearbyBlocks = [];
-			foreach ($nearbyBlocks as $block) {
-				if ($block instanceof Air) {
-					continue;
-				}
-				$pos = $block->getPosition();
-				$networkNearbyBlocks[morton3d_encode($pos->x, $pos->y, $pos->z)] = TypeConverter::getInstance()->getBlockTranslator()->internalIdToNetworkId($block->getStateId());
+			if (isset($this->beforeTickIdsMap[$uuid])) {
+				//PlayerSessionManager::getSession($player)->setTickId($this->beforeTickIdsMap[$uuid]);
+				unset($this->beforeTickIdsMap[$uuid]);
 			}
 
-			$pk->nearbyBlocks = $networkNearbyBlocks;
-
-			$resolveOnOffInputFlags = function(int $inputFlags, int $startFlag, int $stopFlag): ?bool {
-				$enabled = ($inputFlags & (1 << $startFlag)) !== 0;
-				$disabled = ($inputFlags & (1 << $stopFlag)) !== 0;
-				if ($enabled !== $disabled) {
-					return $enabled;
-				}
-
-				return null;
-			};
-
-			$toggleSprint = $resolveOnOffInputFlags($packet->getInputFlags(), PlayerAuthInputFlags::START_SPRINTING, PlayerAuthInputFlags::STOP_SPRINTING);
-			$toggleSneaking = $resolveOnOffInputFlags($packet->getInputFlags(), PlayerAuthInputFlags::START_SNEAKING, PlayerAuthInputFlags::STOP_SNEAKING);
-
-			$sneaking = $this->lastSneakInput[$player] ?? null;
-			$sprinting = $this->lastSprintInput[$player] ?? null;
-
-			// ON -> -1 tick
-			// OFF -> 0 tick
-
-			if ($toggleSneaking !== null) {
-				$sneaking = $this->lastSneakInput[$player] = $toggleSneaking;
-			}
-
-			if ($toggleSprint !== null) {
-				$sprinting = $this->lastSprintInput[$player] = $toggleSprint;
-			}
-
-			if ($packet->hasFlag(PlayerAuthInputFlags::UP))
-				$pk->inputData->appendFlag(InputFlags::UP);
-			if ($packet->hasFlag(PlayerAuthInputFlags::DOWN))
-				$pk->inputData->appendFlag(InputFlags::DOWN);
-			if ($packet->hasFlag(PlayerAuthInputFlags::LEFT))
-				$pk->inputData->appendFlag(InputFlags::LEFT);
-			if ($packet->hasFlag(PlayerAuthInputFlags::RIGHT))
-				$pk->inputData->appendFlag(InputFlags::RIGHT);
-			if ($packet->hasFlag(PlayerAuthInputFlags::JUMPING))
-				$pk->inputData->appendFlag(InputFlags::JUMP);
-			if ($sneaking)
-				$pk->inputData->appendFlag(InputFlags::SNEAK);
-			if ($sprinting)
-				$pk->inputData->appendFlag(InputFlags::SPRINT);
-			if ($packet->hasFlag(PlayerAuthInputFlags::UP_LEFT))
-				$pk->inputData->appendFlag(InputFlags::UP_LEFT);
-			if ($packet->hasFlag(PlayerAuthInputFlags::UP_RIGHT))
-				$pk->inputData->appendFlag(InputFlags::UP_RIGHT);
-			if ($packet->hasFlag(PlayerAuthInputFlags::MISSED_SWING))
-				$pk->inputData->appendFlag(InputFlags::MISSED_SWING);
-
-			$pk->inputData->setDelta($packet->getDelta());
-			$pk->inputData->setMoveVecX($packet->getMoveVecX());
-			$pk->inputData->setMoveVecZ($packet->getMoveVecZ());
-			$pk->inputData->setYaw($packet->getYaw());
-			$pk->inputData->setPitch($packet->getPitch());
-
-			$this->client->getSession()->sendPacket($pk);
+			PlayerSessionManager::getSession($player)->handleAuthInput($packet);
 		}
+
 	}
 }

@@ -7,7 +7,7 @@ namespace Lyrica0954\Mineleft\client\processor;
 use Lyrica0954\Mineleft\client\MineleftClient;
 use Lyrica0954\Mineleft\network\protocol\PacketSetPlayerFlags;
 use Lyrica0954\Mineleft\network\protocol\types\PlayerFlags;
-use pocketmine\network\mcpe\NetworkSession;
+use Lyrica0954\Mineleft\player\PlayerSession;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
@@ -15,12 +15,12 @@ use pocketmine\network\mcpe\protocol\types\entity\LongMetadataProperty;
 
 class PlayerFlagsProcessor {
 
-	public static function process(MineleftClient $client, NetworkSession $session): void {
+	public static function process(MineleftClient $client, PlayerSession $session): void {
 		$packet = new PacketSetPlayerFlags();
-		$packet->playerUuid = $session->getPlayerInfo()->getUuid();
+		$packet->playerUuid = $session->getUuid();
 		$packet->flags = 0;
 
-		$stored = $client->getActorStateStore($session)->getMetadata($session->getPlayer()->getId());
+		$stored = $session->getActorStateStore()->getMetadata($session->getPlayer()->getId());
 
 		if (self::hasGenericFlag($stored, EntityMetadataFlags::SPRINTING))
 			$packet->flags |= (1 << PlayerFlags::SPRINTING);

@@ -16,5 +16,6 @@ class ProtocolIds {
 	const SET_PLAYER_ATTRIBUTE = 7;
 	const PLAYER_VIOLATION = 8;
 	const SET_PLAYER_MOTION = 9;
+	const PLAYER_EFFECT = 10;
 
 }

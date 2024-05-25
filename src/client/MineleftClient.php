@@ -9,22 +9,21 @@ use Lyrica0954\Mineleft\mc\Block;
 use Lyrica0954\Mineleft\mc\BlockAttributeFlags;
 use Lyrica0954\Mineleft\network\MineleftSession;
 use Lyrica0954\Mineleft\network\MineleftSessionBootstrap;
-use Lyrica0954\Mineleft\network\protocol\MineleftPacket;
 use Lyrica0954\Mineleft\network\protocol\PacketBlockMappings;
 use Lyrica0954\Mineleft\network\protocol\PacketConfiguration;
 use Lyrica0954\Mineleft\network\protocol\types\ChunkSendingMethod;
 use pocketmine\block\Liquid;
-use pocketmine\item\StringToItemParser;
+use pocketmine\data\bedrock\block\convert\BlockStateToObjectDeserializer;
+use pocketmine\data\bedrock\block\convert\UnsupportedBlockStateException;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\network\mcpe\convert\BlockStateDictionary;
 use pocketmine\network\mcpe\convert\TypeConverter;
-use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\Server;
 use pocketmine\snooze\SleeperHandlerEntry;
 use pocketmine\utils\AssumptionFailedError;
 use pocketmine\utils\ObjectSet;
+use pocketmine\world\format\io\GlobalBlockStateHandlers;
 use ReflectionClass;
-use WeakMap;
 
 class MineleftClient {
 
@@ -34,21 +33,11 @@ class MineleftClient {
 
 	protected Server $pocketmine;
 
-	/**
-	 * @var WeakMap<NetworkSession, ActorStateStore>
-	 */
-	protected WeakMap $actorStateStore;
-
 	protected ?SleeperHandlerEntry $sleeperHandlerEntry;
 
 	protected ChunkSendingMethod $chunkSendingMethod;
 
 	protected ObjectSet $tickHooks;
-
-	/**
-	 * @var array<int, MineleftPacket[]>
-	 */
-	protected array $packetFutures;
 
 	public function __construct(
 		Server $server,
@@ -58,7 +47,6 @@ class MineleftClient {
 	) {
 		$this->pocketmine = $server;
 		$this->tickHooks = new ObjectSet();
-		$this->actorStateStore = new WeakMap();
 		$this->sleeperHandlerEntry = null;
 		$this->chunkSendingMethod = ChunkSendingMethod::ALTERNATE;
 		$this->session = MineleftSessionBootstrap::start($address, $port, $logger);
@@ -81,6 +69,8 @@ class MineleftClient {
 
 		$lookupTable = (new ReflectionClass(BlockStateDictionary::class))->getProperty("stateDataToStateIdLookup")->getValue(TypeConverter::getInstance()->getBlockTranslator()->getBlockStateDictionary());
 
+		$deserializeFuncs = (new ReflectionClass(BlockStateToObjectDeserializer::class))->getProperty("deserializeFuncs")->getValue(GlobalBlockStateHandlers::getDeserializer());
+
 		foreach ($lookupTable as $name => $data) {
 			$list = [];
 			if (is_int($data)) {
@@ -91,11 +81,17 @@ class MineleftClient {
 
 			foreach ($list as $id) {
 				$stateData = TypeConverter::getInstance()->getBlockTranslator()->getBlockStateDictionary()->generateDataFromStateId($id);
-				$block = StringToItemParser::getInstance()->parse(explode(":", $stateData->getName())[1])?->getBlock();
-
-				if (is_null($block)) {
+				if (!isset($deserializeFuncs[$stateData->getName()])) {
+					// uhm, sorry!
 					continue;
 				}
+				try {
+					$block = GlobalBlockStateHandlers::getDeserializer()->deserializeBlock($stateData);
+				} catch (UnsupportedBlockStateException) {
+					// uhm......................
+					continue;
+				}
+				var_dump($stateData->getName());
 
 				try {
 					$block->getPosition()->x = 0;
@@ -128,18 +124,6 @@ class MineleftClient {
 		}
 
 		$this->session->sendPacket($packet);
-	}
-
-	/**
-	 * @return array
-	 */
-	public function getPacketFutures(): array {
-		return $this->packetFutures;
-	}
-
-	public function postFuturePacket(int $tick, MineleftPacket $packet): void {
-		$this->packetFutures[$tick] ??= [];
-		$this->packetFutures[$tick][] = $packet;
 	}
 
 	/**
@@ -182,18 +166,10 @@ class MineleftClient {
 			($hook)();
 		}
 
-		foreach ($this->packetFutures[Server::getInstance()->getTick()] ?? [] as $packet) {
-			$this->session->sendPacket($packet);
-		}
-
 		$this->session->socketTick();
 	}
 
 	public function close(): void {
 		$this->pocketmine->getTickSleeper()->removeNotifier($this->sleeperHandlerEntry->getNotifierId());
-	}
-
-	public function getActorStateStore(NetworkSession $session): ActorStateStore {
-		return $this->actorStateStore[$session] ??= new ActorStateStore();
 	}
 }
