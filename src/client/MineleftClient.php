@@ -91,7 +91,6 @@ class MineleftClient {
 					// uhm......................
 					continue;
 				}
-				var_dump($stateData->getName());
 
 				try {
 					$block->getPosition()->x = 0;

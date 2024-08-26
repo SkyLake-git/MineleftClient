@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Lyrica0954\Mineleft\client;
 
 use Closure;
-use LogicException;
 use Lyrica0954\Mineleft\client\processor\PlayerAttributeProcessor;
 use Lyrica0954\Mineleft\client\processor\PlayerEffectProcessor;
 use Lyrica0954\Mineleft\client\processor\PlayerFlagsProcessor;
 use Lyrica0954\Mineleft\client\processor\PlayerMotionProcessor;
+use Lyrica0954\Mineleft\client\processor\PlayerPositionProcessor;
 use Lyrica0954\Mineleft\client\task\ChunkSerializingTask;
 use Lyrica0954\Mineleft\Main;
 use Lyrica0954\Mineleft\network\protocol\PacketLevelChunk;
@@ -18,6 +18,7 @@ use Lyrica0954\Mineleft\network\protocol\types\ChunkSendingMethod;
 use Lyrica0954\Mineleft\network\protocol\types\PlayerInfo;
 use Lyrica0954\Mineleft\player\PlayerSession;
 use Lyrica0954\Mineleft\player\PlayerSessionManager;
+use Lyrica0954\Mineleft\rak\MineleftRakLibInterface;
 use pocketmine\event\Listener;
 use pocketmine\event\player\PlayerJoinEvent;
 use pocketmine\event\player\PlayerQuitEvent;
@@ -28,6 +29,8 @@ use pocketmine\event\world\WorldLoadEvent;
 use pocketmine\network\mcpe\protocol\ClientboundPacket;
 use pocketmine\network\mcpe\protocol\DataPacket;
 use pocketmine\network\mcpe\protocol\MobEffectPacket;
+use pocketmine\network\mcpe\protocol\MovePlayerPacket;
+use pocketmine\network\mcpe\protocol\NetworkStackLatencyPacket;
 use pocketmine\network\mcpe\protocol\PlayerAuthInputPacket;
 use pocketmine\network\mcpe\protocol\SetActorDataPacket;
 use pocketmine\network\mcpe\protocol\SetActorMotionPacket;
@@ -109,6 +112,9 @@ class MineleftPocketMineListener implements Listener {
 		$packets = $event->getPackets();
 
 		foreach ($packets as $packet) {
+			if ($packet instanceof NetworkStackLatencyPacket) {
+				continue;
+			}
 			if ($packet instanceof StartGamePacket) {
 				$packet->playerMovementSettings = new PlayerMovementSettings(
 					PlayerMovementType::SERVER_AUTHORITATIVE_V2_REWIND,
@@ -120,52 +126,26 @@ class MineleftPocketMineListener implements Listener {
 			/**
 			 * @template T of ClientboundPacket&DataPacket
 			 * @param T $packet
-			 * @param Closure(T): void $applier
-			 * @param Closure(): void $onAck
-			 * @param (Closure(T): T)|null $cloner
+			 * @param Closure(T, PlayerSession): void $applier
+			 * @param Closure(): void $onACK
 			 * @return void
 			 */
-			$hackDisableBroadcastingPackets = function(mixed &$packet, Closure $applier, Closure $onAck, ?Closure $cloner = null) use ($event): void {
-				$cloner ??= function(mixed $packet): mixed {
-					return clone $packet;
-				};
-				if (count($event->getTargets()) > 1) {
-					$event->cancel();
-
-					foreach ($event->getTargets() as $session) {
-						if ($session->getPlayer() === null) {
-							return;
-						}
-
-						$playerSession = PlayerSessionManager::getSession($session->getPlayer());
-
-						foreach ($event->getPackets() as $packet) {
-							$newPacket = $cloner($packet);
-							$applier($newPacket, $playerSession);
-							$session->sendDataPacketWithReceipt(
-								$newPacket
-							)->onCompletion(fn() => $onAck($playerSession), function(): void {
-								throw new LogicException("This should not be happen");
-							});
-						}
-					}
-				} else {
-					$target = $event->getTargets()[array_key_first($event->getTargets())];
-					if ($target->getPlayer() === null) {
+			$applyWithReceipt = function(mixed &$packet, Closure $applier, Closure $onACK) use ($event): void {
+				foreach ($event->getTargets() as $session) {
+					if ($session->getPlayer() === null) {
 						return;
 					}
 
-					$playerSession = PlayerSessionManager::getSession($target->getPlayer());
-					// ホントは sendDataPacketWithReceipt がいいけど、このイベントからそれを変更する術がない
-					Main::getLatencyHandler()->request($target, function() use ($onAck, $playerSession): void {
-						$onAck($playerSession);
-					});
+					$playerSession = PlayerSessionManager::getSession($session->getPlayer());
+
 					$applier($packet, $playerSession);
+
+					Main::getLatencyHandler()->request($session, fn() => $onACK($playerSession));
 				}
 			};
 
 			if ($packet instanceof SetActorDataPacket) {
-				$hackDisableBroadcastingPackets(
+				$applyWithReceipt(
 					$packet,
 					function(mixed $packet, PlayerSession $session): void {
 						/**
@@ -184,7 +164,7 @@ class MineleftPocketMineListener implements Listener {
 				);
 
 			} elseif ($packet instanceof UpdateAttributesPacket) {
-				$hackDisableBroadcastingPackets(
+				$applyWithReceipt(
 					$packet,
 					function(mixed $packet, PlayerSession $session): void {
 						/**
@@ -201,7 +181,7 @@ class MineleftPocketMineListener implements Listener {
 
 				);
 			} elseif ($packet instanceof SetActorMotionPacket) {
-				$hackDisableBroadcastingPackets(
+				$applyWithReceipt(
 					$packet,
 					function(mixed $packet, PlayerSession $session): void {
 						/**
@@ -217,7 +197,7 @@ class MineleftPocketMineListener implements Listener {
 					}
 				);
 			} elseif ($packet instanceof MobEffectPacket) {
-				$hackDisableBroadcastingPackets(
+				$applyWithReceipt(
 					$packet,
 					function(mixed $packet, PlayerSession $session): void {
 						/**
@@ -229,6 +209,22 @@ class MineleftPocketMineListener implements Listener {
 					function(PlayerSession $session) use ($packet): void {
 						if ($packet->actorRuntimeId === $session->getPlayer()->getId()) {
 							PlayerEffectProcessor::process($this->client, $session, $packet->effectId, $packet->amplifier, $packet->eventId);
+						}
+					}
+				);
+			} elseif ($packet instanceof MovePlayerPacket) {
+				$applyWithReceipt(
+					$packet,
+					function(mixed $packet, PlayerSession $session): void {
+						/**
+						 * @var MovePlayerPacket $packet
+						 */
+
+						$packet->tick = $session->getTickId();
+					},
+					function(PlayerSession $session) use ($packet): void {
+						if ($packet->actorRuntimeId === $session->getPlayer()->getId()) {
+							PlayerPositionProcessor::process($this->client, $session, $packet->position);
 						}
 					}
 				);

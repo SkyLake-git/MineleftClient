@@ -20,7 +20,7 @@ class SocketWrapper {
 		$this->packetPool = $packetPool;
 	}
 
-	public function readPacket(): ?Packet {
+	public function readPacket(): ?array {
 		$buffer = @socket_read($this->socket, 65535);
 
 		if ($buffer === false) {
@@ -33,21 +33,31 @@ class SocketWrapper {
 
 		$stream = new BinaryStream($buffer);
 
-		$packetId = $stream->getShort();
+		$batch = [];
 
-		$packet = $this->packetPool->get($packetId);
+		while (!$stream->feof()) {
+			$packetId = $stream->getShort();
 
-		if ($packet === null) {
-			return null;
+			$packet = $this->packetPool->get($packetId);
+
+			if ($packet === null) {
+				break;
+			}
+
+			try {
+				$packet->decode($stream);
+			} catch (Exception $e) {
+				throw PacketProcessingException::wrap($e, "Decoding failed");
+			}
+
+			$batch[] = $packet;
 		}
 
-		try {
-			$packet->decode($stream);
-		} catch (Exception $e) {
-			throw PacketProcessingException::wrap($e, "Decoding failed");
+		if (!$stream->feof()) {
+			throw new PacketProcessingException("Buffer remaining: " . base64_encode($stream->getRemaining()));
 		}
 
-		return $packet;
+		return $batch;
 	}
 
 	public function writePacket(string $packet): void {

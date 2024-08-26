@@ -16,6 +16,8 @@ class PacketPlayerAuthInput extends MineleftPacket {
 
 	public UuidInterface $playerUuid;
 
+	public int $frame;
+
 	public InputData $inputData;
 
 	public Vector3 $requestedPosition;
@@ -31,9 +33,9 @@ class PacketPlayerAuthInput extends MineleftPacket {
 
 	public function encode(BinaryStream $out): void {
 		BinaryUtils::putString($out, $this->playerUuid->toString());
-
+		$out->putInt($this->frame);
 		$this->inputData->write($out);
-		BinaryUtils::putVec3d($out, $this->requestedPosition);
+		BinaryUtils::putVec3f($out, $this->requestedPosition);
 		$out->putInt(count($this->nearbyBlocks));
 		foreach ($this->nearbyBlocks as $code => $block) {
 			$out->putLong($code);
@@ -43,12 +45,12 @@ class PacketPlayerAuthInput extends MineleftPacket {
 
 	public function decode(BinaryStream $in): void {
 		$this->playerUuid = Uuid::fromString(BinaryUtils::getString($in));
-
+		$this->frame = $in->getInt();
 		$inputData = new InputData();
 		$inputData->read($in);
 
 		$this->inputData = $inputData;
-		$this->requestedPosition = BinaryUtils::getVec3d($in);
+		$this->requestedPosition = BinaryUtils::getVec3f($in);
 
 		$this->nearbyBlocks = [];
 		$count = $in->getInt();

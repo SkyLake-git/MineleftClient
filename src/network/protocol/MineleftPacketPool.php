@@ -21,12 +21,14 @@ class MineleftPacketPool implements IPacketPool {
 		$this->register(ProtocolIds::LEVEL_CHUNK, new PacketLevelChunk());
 		$this->register(ProtocolIds::PLAYER_TELEPORT, new PacketPlayerTeleport());
 		$this->register(ProtocolIds::CONFIGURATION, new PacketConfiguration());
+		$this->register(ProtocolIds::PLAYER_AUTH_INPUT, new PacketPlayerAuthInput());
 		$this->register(ProtocolIds::BLOCK_MAPPINGS, new PacketBlockMappings());
 		$this->register(ProtocolIds::SET_PLAYER_FLAGS, new PacketSetPlayerFlags());
 		$this->register(ProtocolIds::SET_PLAYER_ATTRIBUTE, new PacketSetPlayerAttribute());
 		$this->register(ProtocolIds::PLAYER_VIOLATION, new PacketPlayerViolation());
 		$this->register(ProtocolIds::SET_PLAYER_MOTION, new PacketSetPlayerMotion());
 		$this->register(ProtocolIds::PLAYER_EFFECT, new PacketPlayerEffect());
+		$this->register(ProtocolIds::CORRECT_MOVEMENT, new PacketCorrectMovement());
 	}
 
 	public function register(int $id, Packet $packet): void {

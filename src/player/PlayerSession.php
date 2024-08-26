@@ -7,6 +7,7 @@ namespace Lyrica0954\Mineleft\player;
 use Lyrica0954\Mineleft\client\ActorStateStore;
 use Lyrica0954\Mineleft\client\MineleftClient;
 use Lyrica0954\Mineleft\client\processor\PlayerAttributeProcessor;
+use Lyrica0954\Mineleft\network\protocol\PacketCorrectMovement;
 use Lyrica0954\Mineleft\network\protocol\PacketPlayerAuthInput;
 use Lyrica0954\Mineleft\network\protocol\types\InputData;
 use Lyrica0954\Mineleft\network\protocol\types\InputFlags;
@@ -14,6 +15,7 @@ use Lyrica0954\Mineleft\utils\WorldUtils;
 use pocketmine\block\Air;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\convert\TypeConverter;
+use pocketmine\network\mcpe\protocol\CorrectPlayerMovePredictionPacket;
 use pocketmine\network\mcpe\protocol\PlayerAuthInputPacket;
 use pocketmine\network\mcpe\protocol\types\entity\Attribute;
 use pocketmine\network\mcpe\protocol\types\PlayerAuthInputFlags;
@@ -35,6 +37,10 @@ class PlayerSession {
 
 	private ?bool $lastSprintInput;
 
+	private int $lastMovementCorrection;
+
+	private ?PacketCorrectMovement $queuedCorrectMovement;
+
 	public function __construct(
 		private readonly MineleftClient $mineleftClient,
 		private readonly Player         $player
@@ -45,6 +51,8 @@ class PlayerSession {
 		$this->lastSprintInput = null;
 		$this->lastSneakInput = null;
 		$this->tickId = 0;
+		$this->lastMovementCorrection = 0;
+		$this->queuedCorrectMovement = null;
 	}
 
 	/**
@@ -81,6 +89,13 @@ class PlayerSession {
 		return $this->player->getUniqueId();
 	}
 
+	public function queueCorrectMovement(PacketCorrectMovement $packet): void {
+		if ($this->queuedCorrectMovement !== null) {
+			return;
+		}
+		$this->queuedCorrectMovement = $packet;
+	}
+
 	public function handleAuthInput(PlayerAuthInputPacket $packet): void {
 		if (!$this->firstAuthInputFlag) {
 			$this->firstAuthInputFlag = true;
@@ -91,10 +106,19 @@ class PlayerSession {
 		}
 
 		print_r("TickID: {$this->tickId} ClientTick: {$packet->getTick()}\n");
-		$player = $this->player;
 
+		$this->sendAuthInputPacket($packet);
+
+		if ($this->shouldCorrectMovement($packet->getTick())) {
+			$this->sendCorrectMovement();
+		}
+	}
+
+	protected function sendAuthInputPacket(PlayerAuthInputPacket $packet): void {
+		$player = $this->player;
 		$pk = new PacketPlayerAuthInput();
 		$pk->playerUuid = $player->getUniqueId();
+		$pk->frame = $this->tickId;
 		$pk->inputData = new InputData();
 		$pk->requestedPosition = $packet->getPosition();
 
@@ -170,5 +194,31 @@ class PlayerSession {
 		$pk->inputData->setPitch($packet->getPitch());
 
 		$this->mineleftClient->getSession()->sendPacket($pk);
+	}
+
+	public function shouldCorrectMovement(int $frame): bool {
+		return $frame - $this->lastMovementCorrection > 10;
+	}
+
+	public function sendCorrectMovement(): void {
+		if ($this->queuedCorrectMovement === null) {
+			return;
+		}
+		$packet = $this->queuedCorrectMovement;
+
+		$correction = CorrectPlayerMovePredictionPacket::create(
+			$packet->position->add(0, 1.62, 0),
+			new Vector3($packet->delta->x, 0, $packet->delta->z),
+			$packet->onGround,
+			$packet->frame,
+			CorrectPlayerMovePredictionPacket::PREDICTION_TYPE_PLAYER,
+			null,
+			null
+		);
+
+		$this->player->getNetworkSession()->sendDataPacket($correction);
+
+		$this->lastMovementCorrection = $packet->frame;
+		$this->queuedCorrectMovement = null;
 	}
 }

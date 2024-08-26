@@ -14,17 +14,17 @@ class BinaryUtils {
 		$stream->put($v);
 	}
 
-	public static function putVec3d(BinaryStream $stream, Vector3 $v): void {
-		$stream->putDouble($v->x);
-		$stream->putDouble($v->y);
-		$stream->putDouble($v->z);
+	public static function putVec3f(BinaryStream $stream, Vector3 $v): void {
+		$stream->putFloat($v->x);
+		$stream->putFloat($v->y);
+		$stream->putFloat($v->z);
 	}
 
-	public static function getVec3d(BinaryStream $stream): Vector3 {
+	public static function getVec3f(BinaryStream $stream): Vector3 {
 		return new Vector3(
-			$stream->getDouble(),
-			$stream->getDouble(),
-			$stream->getDouble()
+			$stream->getFloat(),
+			$stream->getFloat(),
+			$stream->getFloat()
 		);
 	}
 

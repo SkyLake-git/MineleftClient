@@ -55,13 +55,15 @@ class MineleftSession {
 	}
 
 	public function socketTick(): void {
-		while (($packet = $this->wrapper->readPacket()) !== null) {
-			if (!$packet instanceof MineleftPacket) {
-				$this->logger->warning("Received un-Mineleft packet. ignoring");
-				continue;
-			}
+		while (($batch = $this->wrapper->readPacket()) !== null) {
+			foreach ($batch as $packet) {
+				if (!$packet instanceof MineleftPacket) {
+					$this->logger->warning("Received un-Mineleft packet. ignoring");
+					continue;
+				}
 
-			$this->handlePacket($packet);
+				$this->handlePacket($packet);
+			}
 		}
 
 		$this->flushSendQueue();
@@ -97,7 +99,7 @@ class MineleftSession {
 			throw new RuntimeException("Mineleft packet encoding failed");
 		}
 
-		$this->queue->push($buffer->getBuffer());
+		$this->queue->enqueue($buffer->getBuffer());
 	}
 
 }

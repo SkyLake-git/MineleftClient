@@ -23,12 +23,12 @@ class PacketSetPlayerMotion extends MineleftPacket {
 
 	public function encode(BinaryStream $out): void {
 		BinaryUtils::putString($out, $this->playerUuid->toString());
-		BinaryUtils::putVec3d($out, $this->motion);
+		BinaryUtils::putVec3f($out, $this->motion);
 	}
 
 	public function decode(BinaryStream $in): void {
 		$this->playerUuid = Uuid::fromString(BinaryUtils::getString($in));
-		$this->motion = BinaryUtils::getVec3d($in);
+		$this->motion = BinaryUtils::getVec3f($in);
 	}
 
 	public function bounds(): PacketBounds {

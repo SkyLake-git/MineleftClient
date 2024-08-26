@@ -17,5 +17,6 @@ class ProtocolIds {
 	const PLAYER_VIOLATION = 8;
 	const SET_PLAYER_MOTION = 9;
 	const PLAYER_EFFECT = 10;
+	const CORRECT_MOVEMENT = 11;
 
 }

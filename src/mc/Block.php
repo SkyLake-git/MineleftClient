@@ -89,12 +89,12 @@ class Block {
 		$count = $stream->getInt();
 		for ($i = 0; $i < $count; $i++) {
 			$this->collisionBoxes[] = new AxisAlignedBB(
-				$stream->getDouble(),
-				$stream->getDouble(),
-				$stream->getDouble(),
-				$stream->getDouble(),
-				$stream->getDouble(),
-				$stream->getDouble()
+				$stream->getFloat(),
+				$stream->getFloat(),
+				$stream->getFloat(),
+				$stream->getFloat(),
+				$stream->getFloat(),
+				$stream->getFloat()
 			);
 		}
 		$this->friction = $stream->getFloat();
@@ -109,12 +109,12 @@ class Block {
 		$stream->putInt(count($this->collisionBoxes));
 
 		foreach ($this->collisionBoxes as $box) {
-			$stream->putDouble($box->minX);
-			$stream->putDouble($box->minY);
-			$stream->putDouble($box->minZ);
-			$stream->putDouble($box->maxX);
-			$stream->putDouble($box->maxY);
-			$stream->putDouble($box->maxZ);
+			$stream->putFloat($box->minX);
+			$stream->putFloat($box->minY);
+			$stream->putFloat($box->minZ);
+			$stream->putFloat($box->maxX);
+			$stream->putFloat($box->maxY);
+			$stream->putFloat($box->maxZ);
 		}
 
 		$stream->putFloat($this->friction);

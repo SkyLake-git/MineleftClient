@@ -27,7 +27,7 @@ class PacketPlayerLogin extends MineleftPacket {
 		BinaryUtils::putString($out, $this->playerInfo->getName());
 		BinaryUtils::putString($out, $this->playerInfo->getUuid()->toString());
 		BinaryUtils::putString($out, $this->worldName);
-		BinaryUtils::putVec3d($out, $this->position);
+		BinaryUtils::putVec3f($out, $this->position);
 	}
 
 	public function decode(BinaryStream $in): void {
@@ -37,7 +37,7 @@ class PacketPlayerLogin extends MineleftPacket {
 		$this->playerInfo = new PlayerInfo($name, $uuid);
 
 		$this->worldName = BinaryUtils::getString($in);
-		$this->position = BinaryUtils::getVec3d($in);
+		$this->position = BinaryUtils::getVec3f($in);
 	}
 
 	public function bounds(): PacketBounds {
