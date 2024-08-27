@@ -100,7 +100,6 @@ class PlayerSession {
 		if (!$this->firstAuthInputFlag) {
 			$this->firstAuthInputFlag = true;
 			PlayerAttributeProcessor::process($this->mineleftClient, $this, [new Attribute(\pocketmine\entity\Attribute::MOVEMENT_SPEED, 0, 100, 0.1, 0.1, [])]);
-			$this->tickId = $packet->getTick();
 		} else {
 			$this->tickId++;
 		}
@@ -208,7 +207,7 @@ class PlayerSession {
 
 		$correction = CorrectPlayerMovePredictionPacket::create(
 			$packet->position->add(0, 1.62, 0),
-			new Vector3($packet->delta->x, 0, $packet->delta->z),
+			$packet->delta,
 			$packet->onGround,
 			$packet->frame,
 			CorrectPlayerMovePredictionPacket::PREDICTION_TYPE_PLAYER,

@@ -236,6 +236,7 @@ class MineleftPocketMineListener implements Listener {
 	 * @param DataPacketReceiveEvent $event
 	 * @return void
 	 * @priority MONITOR
+	 * @handleCancelled
 	 */
 	public function onDataPacketReceive(DataPacketReceiveEvent $event): void {
 		$packet = $event->getPacket();
@@ -244,14 +245,14 @@ class MineleftPocketMineListener implements Listener {
 		if ($packet instanceof PlayerAuthInputPacket) {
 			$uuid = $event->getOrigin()->getPlayerInfo()->getUuid()->toString();
 			if (is_null($player) || !$player->isOnline() || !$player->spawned) {
-				$this->beforeTickIdsMap[$uuid] ??= 0;
+				$this->beforeTickIdsMap[$uuid] ??= $packet->getTick();
 				$this->beforeTickIdsMap[$uuid]++;
 
 				return;
 			}
 
 			if (isset($this->beforeTickIdsMap[$uuid])) {
-				//PlayerSessionManager::getSession($player)->setTickId($this->beforeTickIdsMap[$uuid]);
+				PlayerSessionManager::getSession($player)->setTickId($this->beforeTickIdsMap[$uuid]);
 				unset($this->beforeTickIdsMap[$uuid]);
 			}
 
