@@ -124,7 +124,7 @@ class PlayerSession {
 		$position = $packet->getPosition();
 		$diff = $packet->getPosition()->subtractVector($this->lastPosition ?? $position);
 		$delta = $packet->getDelta();
-		$nearbyBlocks = WorldUtils::getNearbyBlocks($player->getWorld(), $player->getBoundingBox()->expandedCopy(1.25, 1.5, 1.25)->offset($diff->x, $diff->y, $diff->z)->addCoord($delta->x, $delta->y, $delta->z));
+		$nearbyBlocks = WorldUtils::getNearbyBlocks($player->getWorld(), $player->getBoundingBox()->expandedCopy(1.75, 2.25, 1.75)->offset($diff->x, $diff->y, $diff->z)->addCoord($delta->x, $delta->y, $delta->z));
 
 		$this->lastPosition = $packet->getPosition();
 		$networkNearbyBlocks = [];

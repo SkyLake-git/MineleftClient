@@ -48,7 +48,7 @@ class MineleftClient {
 		$this->pocketmine = $server;
 		$this->tickHooks = new ObjectSet();
 		$this->sleeperHandlerEntry = null;
-		$this->chunkSendingMethod = ChunkSendingMethod::REALTIME;
+		$this->chunkSendingMethod = ChunkSendingMethod::ALTERNATE;
 		$this->session = MineleftSessionBootstrap::start($address, $port, $logger);
 		$this->listener = new MineleftPocketMineListener($this);
 	}
