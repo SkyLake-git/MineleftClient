@@ -12,7 +12,7 @@ class BlockStateData {
 	/**
 	 * @var array<string, int>
 	 */
-	protected array $integerMap;
+	public array $integerMap;
 
 	public function __construct() {
 		$this->integerMap = [];

@@ -18,5 +18,6 @@ class ProtocolIds {
 	const SET_PLAYER_MOTION = 9;
 	const PLAYER_EFFECT = 10;
 	const CORRECT_MOVEMENT = 11;
+	const SIMULATION_FRAME_DEBUG = 12;
 
 }

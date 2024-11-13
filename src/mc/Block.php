@@ -62,6 +62,13 @@ class Block {
 	}
 
 	/**
+	 * @return BlockStateData
+	 */
+	public function getStateData(): BlockStateData {
+		return $this->stateData;
+	}
+
+	/**
 	 * @return string
 	 */
 	public function getIdentifier(): string {

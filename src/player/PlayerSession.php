@@ -104,8 +104,6 @@ class PlayerSession {
 			$this->tickId++;
 		}
 
-		print_r("TickID: {$this->tickId} ClientTick: {$packet->getTick()}\n");
-
 		$this->sendAuthInputPacket($packet);
 
 		if ($this->shouldCorrectMovement($packet->getTick())) {

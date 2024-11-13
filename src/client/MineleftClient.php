@@ -16,6 +16,7 @@ use pocketmine\block\Liquid;
 use pocketmine\data\bedrock\block\convert\BlockStateToObjectDeserializer;
 use pocketmine\data\bedrock\block\convert\UnsupportedBlockStateException;
 use pocketmine\math\AxisAlignedBB;
+use pocketmine\nbt\tag\IntTag;
 use pocketmine\network\mcpe\convert\BlockStateDictionary;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\Server;
@@ -105,10 +106,19 @@ class MineleftClient {
 
 				if ($block instanceof Liquid) {
 					$netBlock->appendAttributeFlag(BlockAttributeFlags::LIQUID);
+
+					$falling = $block->isFalling() ? 'true' : 'false';
+					print_r("id: {$stateData->getName()} falling: {$falling} decay: " . $block->getDecay() . " depth: " . $stateData->getState("liquid_depth")->getValue() . "\n");
 				}
 
 				if ($block->canClimb()) {
 					$netBlock->appendAttributeFlag(BlockAttributeFlags::CLIMBABLE);
+				}
+
+				foreach ($stateData->getStates() as $key => $tag) {
+					if ($tag instanceof IntTag) {
+						$netBlock->getStateData()->integerMap[$key] = $tag->getValue();
+					}
 				}
 
 				if (str_starts_with($stateData->getName(), "minecraft:water")) {
