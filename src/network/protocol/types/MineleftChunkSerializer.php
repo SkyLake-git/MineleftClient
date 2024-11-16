@@ -29,14 +29,14 @@ class MineleftChunkSerializer {
 	public static function serializeSubChunk(SubChunk $subChunk): string {
 		$out = new BinaryStream();
 
+		// todo: use LevelChunkPacket to save serializing cost
 		$out->putInt(count($subChunk->getBlockLayers()));
 		foreach ($subChunk->getBlockLayers() as $layer) {
-			$out->putInt(SubChunk::EDGE_LENGTH ** 3);
+			$out->putInt(SubChunk::EDGE_LENGTH);
 			for ($cx = 0; $cx < SubChunk::EDGE_LENGTH; ++$cx) {
 				for ($cy = 0; $cy < SubChunk::EDGE_LENGTH; ++$cy) {
 					for ($cz = 0; $cz < SubChunk::EDGE_LENGTH; ++$cz) {
 						$block = $layer->get($cx, $cy, $cz);
-						$out->putLong(morton3d_encode($cx, $cy, $cz));
 						$networkId = TypeConverter::getInstance()->getBlockTranslator()->internalIdToNetworkId($block);
 						$out->putInt($networkId);
 					}
