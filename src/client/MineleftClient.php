@@ -13,6 +13,7 @@ use Lyrica0954\Mineleft\network\protocol\PacketBlockMappings;
 use Lyrica0954\Mineleft\network\protocol\PacketConfiguration;
 use Lyrica0954\Mineleft\network\protocol\types\ChunkSendingMethod;
 use pocketmine\block\Liquid;
+use pocketmine\data\bedrock\block\BlockStateDeserializeException;
 use pocketmine\data\bedrock\block\convert\BlockStateToObjectDeserializer;
 use pocketmine\data\bedrock\block\convert\UnsupportedBlockStateException;
 use pocketmine\math\AxisAlignedBB;
@@ -91,6 +92,9 @@ class MineleftClient {
 				} catch (UnsupportedBlockStateException) {
 					// uhm......................
 					continue;
+				} catch (BlockStateDeserializeException) {
+					$this->getSession()->getLogger()->debug("Failed to deserialize {$stateData->getName()}");
+					continue;
 				}
 
 				try {
@@ -136,6 +140,13 @@ class MineleftClient {
 	}
 
 	/**
+	 * @return MineleftSession
+	 */
+	public function getSession(): MineleftSession {
+		return $this->session;
+	}
+
+	/**
 	 * @return ObjectSet
 	 */
 	public function getTickHooks(): ObjectSet {
@@ -161,13 +172,6 @@ class MineleftClient {
 	 */
 	public function getListener(): MineleftPocketMineListener {
 		return $this->listener;
-	}
-
-	/**
-	 * @return MineleftSession
-	 */
-	public function getSession(): MineleftSession {
-		return $this->session;
 	}
 
 	public function tick(): void {

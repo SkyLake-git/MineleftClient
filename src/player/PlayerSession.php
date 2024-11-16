@@ -201,10 +201,11 @@ class PlayerSession {
 		if ($this->queuedCorrectMovement === null) {
 			return;
 		}
+
 		$packet = $this->queuedCorrectMovement;
 
 		$correction = CorrectPlayerMovePredictionPacket::create(
-			$packet->position->add(0, 1.62, 0),
+			$packet->position->add(0, 1.621, 0),
 			$packet->delta,
 			$packet->onGround,
 			$packet->frame,

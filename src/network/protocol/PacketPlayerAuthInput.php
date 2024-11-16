@@ -9,7 +9,6 @@ use Lyrica0954\Mineleft\network\protocol\types\InputData;
 use Lyrica0954\Mineleft\utils\BinaryUtils;
 use pocketmine\math\Vector3;
 use pocketmine\utils\BinaryStream;
-use Ramsey\Uuid\Uuid;
 use Ramsey\Uuid\UuidInterface;
 
 class PacketPlayerAuthInput extends MineleftPacket {
@@ -32,7 +31,7 @@ class PacketPlayerAuthInput extends MineleftPacket {
 	}
 
 	public function encode(BinaryStream $out): void {
-		BinaryUtils::putString($out, $this->playerUuid->toString());
+		BinaryUtils::putUUID($out, $this->playerUuid);
 		$out->putInt($this->frame);
 		$this->inputData->write($out);
 		BinaryUtils::putVec3f($out, $this->requestedPosition);
@@ -44,7 +43,7 @@ class PacketPlayerAuthInput extends MineleftPacket {
 	}
 
 	public function decode(BinaryStream $in): void {
-		$this->playerUuid = Uuid::fromString(BinaryUtils::getString($in));
+		$this->playerUuid = BinaryUtils::getUUID($in);
 		$this->frame = $in->getInt();
 		$inputData = new InputData();
 		$inputData->read($in);

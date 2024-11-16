@@ -9,7 +9,6 @@ use Lyrica0954\Mineleft\network\protocol\types\PlayerInfo;
 use Lyrica0954\Mineleft\utils\BinaryUtils;
 use pocketmine\math\Vector3;
 use pocketmine\utils\BinaryStream;
-use Ramsey\Uuid\Uuid;
 
 class PacketPlayerLogin extends MineleftPacket {
 
@@ -25,14 +24,14 @@ class PacketPlayerLogin extends MineleftPacket {
 
 	public function encode(BinaryStream $out): void {
 		BinaryUtils::putString($out, $this->playerInfo->getName());
-		BinaryUtils::putString($out, $this->playerInfo->getUuid()->toString());
+		BinaryUtils::putUUID($out, $this->playerInfo->getUuid());
 		BinaryUtils::putString($out, $this->worldName);
 		BinaryUtils::putVec3f($out, $this->position);
 	}
 
 	public function decode(BinaryStream $in): void {
 		$name = BinaryUtils::getString($in);
-		$uuid = Uuid::fromString(BinaryUtils::getString($in));
+		$uuid = BinaryUtils::getUUID($in);
 
 		$this->playerInfo = new PlayerInfo($name, $uuid);
 

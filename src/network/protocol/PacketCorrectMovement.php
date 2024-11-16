@@ -9,7 +9,6 @@ use Lyrica0954\Mineleft\network\protocol\handler\IMineleftPacketHandler;
 use Lyrica0954\Mineleft\utils\BinaryUtils;
 use pocketmine\math\Vector3;
 use pocketmine\utils\BinaryStream;
-use Ramsey\Uuid\Uuid;
 use Ramsey\Uuid\UuidInterface;
 
 class PacketCorrectMovement extends MineleftPacket {
@@ -29,7 +28,7 @@ class PacketCorrectMovement extends MineleftPacket {
 	}
 
 	public function encode(BinaryStream $out): void {
-		BinaryUtils::putString($out, $this->playerUuid->toString());
+		BinaryUtils::putUUID($out, $this->playerUuid);
 		BinaryUtils::putVec3f($out, $this->position);
 		BinaryUtils::putVec3f($out, $this->delta);
 		$out->putBool($this->onGround);
@@ -37,7 +36,7 @@ class PacketCorrectMovement extends MineleftPacket {
 	}
 
 	public function decode(BinaryStream $in): void {
-		$this->playerUuid = Uuid::fromString(BinaryUtils::getString($in));
+		$this->playerUuid = BinaryUtils::getUUID($in);
 		$this->position = BinaryUtils::getVec3f($in);
 		$this->delta = BinaryUtils::getVec3f($in);
 		$this->onGround = $in->getBool();

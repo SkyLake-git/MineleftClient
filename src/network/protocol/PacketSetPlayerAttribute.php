@@ -7,7 +7,6 @@ namespace Lyrica0954\Mineleft\network\protocol;
 use Lyrica0954\Mineleft\net\PacketBounds;
 use Lyrica0954\Mineleft\utils\BinaryUtils;
 use pocketmine\utils\BinaryStream;
-use Ramsey\Uuid\Uuid;
 use Ramsey\Uuid\UuidInterface;
 
 class PacketSetPlayerAttribute extends MineleftPacket {
@@ -21,12 +20,12 @@ class PacketSetPlayerAttribute extends MineleftPacket {
 	}
 
 	public function encode(BinaryStream $out): void {
-		BinaryUtils::putString($out, $this->playerUuid->toString());
+		BinaryUtils::putUUID($out, $this->playerUuid);
 		$out->putFloat($this->movementSpeed);
 	}
 
 	public function decode(BinaryStream $in): void {
-		$this->playerUuid = Uuid::fromString(BinaryUtils::getString($in));
+		$this->playerUuid = BinaryUtils::getUUID($in);
 		$this->movementSpeed = $in->getFloat();
 	}
 

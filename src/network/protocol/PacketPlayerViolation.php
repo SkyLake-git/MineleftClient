@@ -9,7 +9,6 @@ use Lyrica0954\Mineleft\network\protocol\handler\IMineleftPacketHandler;
 use Lyrica0954\Mineleft\network\protocol\types\ViolationLevel;
 use Lyrica0954\Mineleft\utils\BinaryUtils;
 use pocketmine\utils\BinaryStream;
-use Ramsey\Uuid\Uuid;
 use Ramsey\Uuid\UuidInterface;
 use RuntimeException;
 
@@ -26,13 +25,13 @@ class PacketPlayerViolation extends MineleftPacket {
 	}
 
 	public function encode(BinaryStream $out): void {
-		BinaryUtils::putString($out, $this->playerUuid->toString());
+		BinaryUtils::putUUID($out, $this->playerUuid);
 		BinaryUtils::putString($out, $this->message);
 		$out->putInt($this->level->value);
 	}
 
 	public function decode(BinaryStream $in): void {
-		$this->playerUuid = Uuid::fromString(BinaryUtils::getString($in));
+		$this->playerUuid = BinaryUtils::getUUID($in);
 		$this->message = BinaryUtils::getString($in);
 		$this->level = ViolationLevel::tryFrom($in->getInt()) ?? throw new RuntimeException("Invalid violation level");
 	}

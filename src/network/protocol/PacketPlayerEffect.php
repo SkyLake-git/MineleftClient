@@ -8,7 +8,6 @@ use Lyrica0954\Mineleft\net\PacketBounds;
 use Lyrica0954\Mineleft\network\protocol\types\Effect;
 use Lyrica0954\Mineleft\utils\BinaryUtils;
 use pocketmine\utils\BinaryStream;
-use Ramsey\Uuid\Uuid;
 use Ramsey\Uuid\UuidInterface;
 
 class PacketPlayerEffect extends MineleftPacket {
@@ -30,14 +29,14 @@ class PacketPlayerEffect extends MineleftPacket {
 	}
 
 	public function encode(BinaryStream $out): void {
-		BinaryUtils::putString($out, $this->playerUuid->toString());
+		BinaryUtils::putUUID($out, $this->playerUuid);
 		$out->putInt($this->effect->value);
 		$out->putInt($this->amplifier);
 		$out->putInt($this->mode);
 	}
 
 	public function decode(BinaryStream $in): void {
-		$this->playerUuid = Uuid::fromString(BinaryUtils::getString($in));
+		$this->playerUuid = BinaryUtils::getUUID($in);
 		$this->effect = Effect::from($in->getInt());
 		$this->amplifier = $in->getInt();
 		$this->mode = $in->getInt();

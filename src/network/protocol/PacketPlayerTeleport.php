@@ -8,7 +8,6 @@ use Lyrica0954\Mineleft\net\PacketBounds;
 use Lyrica0954\Mineleft\utils\BinaryUtils;
 use pocketmine\math\Vector3;
 use pocketmine\utils\BinaryStream;
-use Ramsey\Uuid\Uuid;
 use Ramsey\Uuid\UuidInterface;
 
 class PacketPlayerTeleport extends MineleftPacket {
@@ -24,13 +23,13 @@ class PacketPlayerTeleport extends MineleftPacket {
 	}
 
 	public function encode(BinaryStream $out): void {
-		BinaryUtils::putString($out, $this->playerUuid->toString());
+		BinaryUtils::putUUID($out, $this->playerUuid);
 		BinaryUtils::putString($out, $this->worldName);
 		BinaryUtils::putVec3f($out, $this->position);
 	}
 
 	public function decode(BinaryStream $in): void {
-		$this->playerUuid = Uuid::fromString(BinaryUtils::getString($in));
+		$this->playerUuid = BinaryUtils::getUUID($in);
 		$this->worldName = BinaryUtils::getString($in);
 		$this->position = BinaryUtils::getVec3f($in);
 	}

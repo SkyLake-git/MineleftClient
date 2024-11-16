@@ -18,7 +18,6 @@ use Lyrica0954\Mineleft\network\protocol\types\ChunkSendingMethod;
 use Lyrica0954\Mineleft\network\protocol\types\PlayerInfo;
 use Lyrica0954\Mineleft\player\PlayerSession;
 use Lyrica0954\Mineleft\player\PlayerSessionManager;
-use Lyrica0954\Mineleft\rak\MineleftRakLibInterface;
 use pocketmine\event\Listener;
 use pocketmine\event\player\PlayerJoinEvent;
 use pocketmine\event\player\PlayerQuitEvent;
@@ -36,11 +35,10 @@ use pocketmine\network\mcpe\protocol\SetActorDataPacket;
 use pocketmine\network\mcpe\protocol\SetActorMotionPacket;
 use pocketmine\network\mcpe\protocol\StartGamePacket;
 use pocketmine\network\mcpe\protocol\types\PlayerMovementSettings;
-use pocketmine\network\mcpe\protocol\types\PlayerMovementType;
+use pocketmine\network\mcpe\protocol\types\ServerAuthMovementMode;
 use pocketmine\network\mcpe\protocol\UpdateAttributesPacket;
 use pocketmine\player\Player;
 use pocketmine\world\World;
-use T;
 
 class MineleftPocketMineListener implements Listener {
 
@@ -117,7 +115,7 @@ class MineleftPocketMineListener implements Listener {
 			}
 			if ($packet instanceof StartGamePacket) {
 				$packet->playerMovementSettings = new PlayerMovementSettings(
-					PlayerMovementType::SERVER_AUTHORITATIVE_V2_REWIND,
+					ServerAuthMovementMode::SERVER_AUTHORITATIVE_V3,
 					40,
 					false
 				);
