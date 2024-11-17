@@ -7,7 +7,6 @@ namespace Lyrica0954\Mineleft\network;
 use Exception;
 use Logger;
 use Lyrica0954\Mineleft\net\IPacketPool;
-use Lyrica0954\Mineleft\net\PacketBounds;
 use Lyrica0954\Mineleft\net\SocketWrapper;
 use Lyrica0954\Mineleft\network\protocol\handler\IMineleftPacketHandler;
 use Lyrica0954\Mineleft\network\protocol\handler\NormalMineleftPacketHandler;
@@ -70,7 +69,7 @@ class MineleftSession {
 	}
 
 	public function handlePacket(MineleftPacket $packet): void {
-		if ($packet->bounds() !== PacketBounds::CLIENT) {
+		if (!$packet->bounds()->client()) {
 			$this->logger->warning("Invalid bounding packet received. Ignoring");
 
 			return;

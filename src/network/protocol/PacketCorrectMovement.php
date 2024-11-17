@@ -6,14 +6,13 @@ namespace Lyrica0954\Mineleft\network\protocol;
 
 use Lyrica0954\Mineleft\net\PacketBounds;
 use Lyrica0954\Mineleft\network\protocol\handler\IMineleftPacketHandler;
-use Lyrica0954\Mineleft\utils\BinaryUtils;
+use Lyrica0954\Mineleft\utils\CodecHelper;
 use pocketmine\math\Vector3;
 use pocketmine\utils\BinaryStream;
-use Ramsey\Uuid\UuidInterface;
 
 class PacketCorrectMovement extends MineleftPacket {
 
-	public UuidInterface $playerUuid;
+	public int $profileRuntimeId;
 
 	public Vector3 $position;
 
@@ -28,17 +27,17 @@ class PacketCorrectMovement extends MineleftPacket {
 	}
 
 	public function encode(BinaryStream $out): void {
-		BinaryUtils::putUUID($out, $this->playerUuid);
-		BinaryUtils::putVec3f($out, $this->position);
-		BinaryUtils::putVec3f($out, $this->delta);
+		$out->putInt($this->profileRuntimeId);
+		CodecHelper::putVec3f($out, $this->position);
+		CodecHelper::putVec3f($out, $this->delta);
 		$out->putBool($this->onGround);
 		$out->putInt($this->frame);
 	}
 
 	public function decode(BinaryStream $in): void {
-		$this->playerUuid = BinaryUtils::getUUID($in);
-		$this->position = BinaryUtils::getVec3f($in);
-		$this->delta = BinaryUtils::getVec3f($in);
+		$this->profileRuntimeId = $in->getInt();
+		$this->position = CodecHelper::getVec3f($in);
+		$this->delta = CodecHelper::getVec3f($in);
 		$this->onGround = $in->getBool();
 		$this->frame = $in->getInt();
 	}

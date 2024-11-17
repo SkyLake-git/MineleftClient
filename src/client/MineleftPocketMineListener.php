@@ -12,19 +12,23 @@ use Lyrica0954\Mineleft\client\processor\PlayerMotionProcessor;
 use Lyrica0954\Mineleft\client\processor\PlayerPositionProcessor;
 use Lyrica0954\Mineleft\client\task\ChunkSerializingTask;
 use Lyrica0954\Mineleft\Main;
+use Lyrica0954\Mineleft\network\protocol\PacketDestroyChunk;
 use Lyrica0954\Mineleft\network\protocol\PacketLevelChunk;
 use Lyrica0954\Mineleft\network\protocol\PacketPlayerLogin;
 use Lyrica0954\Mineleft\network\protocol\types\ChunkSendingMethod;
 use Lyrica0954\Mineleft\network\protocol\types\PlayerInfo;
-use Lyrica0954\Mineleft\player\PlayerSession;
-use Lyrica0954\Mineleft\player\PlayerSessionManager;
+use Lyrica0954\Mineleft\player\PlayerProfile;
+use Lyrica0954\Mineleft\player\PlayerProfileManager;
 use pocketmine\event\Listener;
 use pocketmine\event\player\PlayerJoinEvent;
 use pocketmine\event\player\PlayerQuitEvent;
 use pocketmine\event\server\DataPacketReceiveEvent;
 use pocketmine\event\server\DataPacketSendEvent;
 use pocketmine\event\world\ChunkLoadEvent;
+use pocketmine\event\world\ChunkUnloadEvent;
 use pocketmine\event\world\WorldLoadEvent;
+use pocketmine\math\Vector3;
+use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\protocol\ClientboundPacket;
 use pocketmine\network\mcpe\protocol\DataPacket;
 use pocketmine\network\mcpe\protocol\MobEffectPacket;
@@ -37,6 +41,7 @@ use pocketmine\network\mcpe\protocol\StartGamePacket;
 use pocketmine\network\mcpe\protocol\types\PlayerMovementSettings;
 use pocketmine\network\mcpe\protocol\types\ServerAuthMovementMode;
 use pocketmine\network\mcpe\protocol\UpdateAttributesPacket;
+use pocketmine\network\mcpe\protocol\UpdateBlockPacket;
 use pocketmine\player\Player;
 use pocketmine\world\World;
 
@@ -59,10 +64,23 @@ class MineleftPocketMineListener implements Listener {
 		$this->beforeTickIdsMap = [];
 	}
 
+	public function onChunkUnload(ChunkUnloadEvent $event): void {
+		if ($this->client->getChunkSendingMethod() === ChunkSendingMethod::REALTIME) {
+			$this->client->getSession()->getLogger()->info("Destroying chunk (x: {$event->getChunkX()}, z: {$event->getChunkZ()})");
+			$packet = new PacketDestroyChunk();
+			$packet->x = $event->getChunkX();
+			$packet->z = $event->getChunkZ();
+			$packet->worldName = $event->getWorld()->getFolderName();
+
+			$this->client->getSession()->sendPacket($packet);
+		}
+	}
+
 	public function onChunkLoad(ChunkLoadEvent $event): void {
 		if ($this->client->getChunkSendingMethod() === ChunkSendingMethod::REALTIME) {
-			print_r("sending chunk\n");
+			$this->client->getSession()->getLogger()->info("Serializing chunk (x: {$event->getChunkX()}, z: {$event->getChunkZ()})");
 			$task = new ChunkSerializingTask($event->getChunk(), function(string $payload) use ($event): void {
+				$this->client->getSession()->getLogger()->info("Chunk payload sent (x: {$event->getChunkX()}, z: {$event->getChunkZ()})");
 				$packet = new PacketLevelChunk();
 				$packet->x = $event->getChunkX();
 				$packet->z = $event->getChunkZ();
@@ -95,10 +113,13 @@ class MineleftPocketMineListener implements Listener {
 		$this->client->getSession()->sendPacket($packet);
 
 		$this->playerByActorIdMap[$player->getId()] = $player;
+
+		PlayerProfileManager::createSession($player);
 	}
 
 	public function onPlayerQuit(PlayerQuitEvent $event): void {
 		unset($this->playerByActorIdMap[$event->getPlayer()->getId()]);
+		PlayerProfileManager::removeSession($event->getPlayer());
 	}
 
 	/**
@@ -124,7 +145,7 @@ class MineleftPocketMineListener implements Listener {
 			/**
 			 * @template T of ClientboundPacket&DataPacket
 			 * @param T $packet
-			 * @param Closure(T, PlayerSession): void $applier
+			 * @param Closure(T, PlayerProfile): void $applier
 			 * @param Closure(): void $onACK
 			 * @return void
 			 */
@@ -134,7 +155,7 @@ class MineleftPocketMineListener implements Listener {
 						return;
 					}
 
-					$playerSession = PlayerSessionManager::getSession($session->getPlayer());
+					$playerSession = PlayerProfileManager::getSession($session->getPlayer());
 
 					$applier($packet, $playerSession);
 
@@ -145,14 +166,14 @@ class MineleftPocketMineListener implements Listener {
 			if ($packet instanceof SetActorDataPacket) {
 				$applyWithReceipt(
 					$packet,
-					function(mixed $packet, PlayerSession $session): void {
+					function(mixed $packet, PlayerProfile $session): void {
 						/**
 						 * @var SetActorDataPacket $packet
 						 */
 
 						$packet->tick = $session->getTickId();
 					},
-					function(PlayerSession $session) use ($packet): void {
+					function(PlayerProfile $session) use ($packet): void {
 						$session->getActorStateStore()->updateMetadata($packet->actorRuntimeId, $packet->metadata);
 
 						if ($packet->actorRuntimeId === $session->getPlayer()->getId()) {
@@ -164,14 +185,14 @@ class MineleftPocketMineListener implements Listener {
 			} elseif ($packet instanceof UpdateAttributesPacket) {
 				$applyWithReceipt(
 					$packet,
-					function(mixed $packet, PlayerSession $session): void {
+					function(mixed $packet, PlayerProfile $session): void {
 						/**
 						 * @var UpdateAttributesPacket $packet
 						 */
 
 						$packet->tick = $session->getTickId();
 					},
-					function(PlayerSession $session) use ($packet): void {
+					function(PlayerProfile $session) use ($packet): void {
 						if ($packet->actorRuntimeId === $session->getPlayer()->getId()) {
 							PlayerAttributeProcessor::process($this->client, $session, $packet->entries);
 						}
@@ -181,14 +202,14 @@ class MineleftPocketMineListener implements Listener {
 			} elseif ($packet instanceof SetActorMotionPacket) {
 				$applyWithReceipt(
 					$packet,
-					function(mixed $packet, PlayerSession $session): void {
+					function(mixed $packet, PlayerProfile $session): void {
 						/**
 						 * @var SetActorMotionPacket $packet
 						 */
 
 						$packet->tick = $session->getTickId();
 					},
-					function(PlayerSession $session) use ($packet): void {
+					function(PlayerProfile $session) use ($packet): void {
 						if ($packet->actorRuntimeId === $session->getPlayer()->getId()) {
 							PlayerMotionProcessor::process($this->client, $session, $packet->motion);
 						}
@@ -197,14 +218,14 @@ class MineleftPocketMineListener implements Listener {
 			} elseif ($packet instanceof MobEffectPacket) {
 				$applyWithReceipt(
 					$packet,
-					function(mixed $packet, PlayerSession $session): void {
+					function(mixed $packet, PlayerProfile $session): void {
 						/**
 						 * @var MobEffectPacket $packet
 						 */
 
 						$packet->tick = $session->getTickId();
 					},
-					function(PlayerSession $session) use ($packet): void {
+					function(PlayerProfile $session) use ($packet): void {
 						if ($packet->actorRuntimeId === $session->getPlayer()->getId()) {
 							PlayerEffectProcessor::process($this->client, $session, $packet->effectId, $packet->amplifier, $packet->eventId);
 						}
@@ -213,17 +234,38 @@ class MineleftPocketMineListener implements Listener {
 			} elseif ($packet instanceof MovePlayerPacket) {
 				$applyWithReceipt(
 					$packet,
-					function(mixed $packet, PlayerSession $session): void {
+					function(mixed $packet, PlayerProfile $session): void {
 						/**
 						 * @var MovePlayerPacket $packet
 						 */
 
 						$packet->tick = $session->getTickId();
 					},
-					function(PlayerSession $session) use ($packet): void {
+					function(PlayerProfile $session) use ($packet): void {
 						if ($packet->actorRuntimeId === $session->getPlayer()->getId()) {
 							PlayerPositionProcessor::process($this->client, $session, $packet->position);
 						}
+					}
+				);
+			} elseif ($packet instanceof UpdateBlockPacket) {
+				$applyWithReceipt(
+					$packet,
+					function(mixed $packet, PlayerProfile $session): void {
+						/**
+						 * @var UpdateBlockPacket $packet
+						 */
+
+						$position = new Vector3($packet->blockPosition->getX(), $packet->blockPosition->getY(), $packet->blockPosition->getZ());
+						$previous = TypeConverter::getInstance()->getBlockTranslator()->internalIdToNetworkId($session->getPlayer()->getWorld()->getBlock($position)->getStateId());
+						$session->startBlockSync(
+							$position,
+							$previous,
+							$packet->blockRuntimeId
+						);
+					},
+					function(PlayerProfile $session) use ($packet): void {
+						$position = new Vector3($packet->blockPosition->getX(), $packet->blockPosition->getY(), $packet->blockPosition->getZ());
+						$session->getBlockSync($position)?->onSync();
 					}
 				);
 			}
@@ -250,11 +292,11 @@ class MineleftPocketMineListener implements Listener {
 			}
 
 			if (isset($this->beforeTickIdsMap[$uuid])) {
-				PlayerSessionManager::getSession($player)->setTickId($this->beforeTickIdsMap[$uuid]);
+				PlayerProfileManager::getSession($player)->setTickId($this->beforeTickIdsMap[$uuid]);
 				unset($this->beforeTickIdsMap[$uuid]);
 			}
 
-			PlayerSessionManager::getSession($player)->handleAuthInput($packet);
+			PlayerProfileManager::getSession($player)->handleAuthInput($packet);
 		}
 
 	}

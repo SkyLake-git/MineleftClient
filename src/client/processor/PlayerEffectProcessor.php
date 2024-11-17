@@ -7,13 +7,13 @@ namespace Lyrica0954\Mineleft\client\processor;
 use Lyrica0954\Mineleft\client\MineleftClient;
 use Lyrica0954\Mineleft\network\protocol\PacketPlayerEffect;
 use Lyrica0954\Mineleft\network\protocol\types\Effect;
-use Lyrica0954\Mineleft\player\PlayerSession;
+use Lyrica0954\Mineleft\player\PlayerProfile;
 use pocketmine\data\bedrock\EffectIds;
 use pocketmine\network\mcpe\protocol\MobEffectPacket;
 use RuntimeException;
 
 class PlayerEffectProcessor {
-	public static function process(MineleftClient $client, PlayerSession $session, int $effectId, int $effectAmplifier, int $mode): void {
+	public static function process(MineleftClient $client, PlayerProfile $session, int $effectId, int $effectAmplifier, int $mode): void {
 		$netEffect = match ($effectId) {
 			EffectIds::JUMP_BOOST => Effect::JUMP_BOOST,
 			default => null
@@ -33,7 +33,7 @@ class PlayerEffectProcessor {
 		$pk = new PacketPlayerEffect();
 		$pk->effect = $netEffect;
 		$pk->amplifier = $effectAmplifier;
-		$pk->playerUuid = $session->getUuid();
+		$pk->profileRuntimeId = $session->getRuntimeId();
 		$pk->mode = $netMode;
 
 		$client->getSession()->sendPacket($pk);

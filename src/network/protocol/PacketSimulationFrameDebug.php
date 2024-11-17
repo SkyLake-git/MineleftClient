@@ -6,14 +6,13 @@ namespace Lyrica0954\Mineleft\network\protocol;
 
 use Lyrica0954\Mineleft\net\PacketBounds;
 use Lyrica0954\Mineleft\network\protocol\handler\IMineleftPacketHandler;
-use Lyrica0954\Mineleft\utils\BinaryUtils;
+use Lyrica0954\Mineleft\utils\CodecHelper;
 use pocketmine\math\Vector3;
 use pocketmine\utils\BinaryStream;
-use Ramsey\Uuid\UuidInterface;
 
 class PacketSimulationFrameDebug extends MineleftPacket {
 
-	public UuidInterface $playerUuid;
+	public int $profileRuntimeId;
 
 	public int $frame;
 
@@ -30,22 +29,22 @@ class PacketSimulationFrameDebug extends MineleftPacket {
 	}
 
 	public function encode(BinaryStream $out): void {
-		BinaryUtils::putUUID($out, $this->playerUuid);
+		$out->putInt($this->profileRuntimeId);
 		$out->putInt($this->frame);
-		BinaryUtils::putVec3f($out, $this->position);
-		BinaryUtils::putVec3f($out, $this->delta);
-		BinaryUtils::putVec3f($out, $this->clientPosition);
-		BinaryUtils::putVec3f($out, $this->clientDelta);
+		CodecHelper::putVec3f($out, $this->position);
+		CodecHelper::putVec3f($out, $this->delta);
+		CodecHelper::putVec3f($out, $this->clientPosition);
+		CodecHelper::putVec3f($out, $this->clientDelta);
 	}
 
 	public function decode(BinaryStream $in): void {
 		// todo: improve uuid encoding
-		$this->playerUuid = BinaryUtils::getUUID($in);
+		$this->profileRuntimeId = $in->getInt();
 		$this->frame = $in->getInt();
-		$this->position = BinaryUtils::getVec3f($in);
-		$this->delta = BinaryUtils::getVec3f($in);
-		$this->clientPosition = BinaryUtils::getVec3f($in);
-		$this->clientDelta = BinaryUtils::getVec3f($in);
+		$this->position = CodecHelper::getVec3f($in);
+		$this->delta = CodecHelper::getVec3f($in);
+		$this->clientPosition = CodecHelper::getVec3f($in);
+		$this->clientDelta = CodecHelper::getVec3f($in);
 	}
 
 	public function bounds(): PacketBounds {

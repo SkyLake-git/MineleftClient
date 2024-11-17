@@ -7,6 +7,8 @@ namespace Lyrica0954\Mineleft\network\protocol\types;
 enum ChunkSendingMethod: int {
 
 	/**
+	 * Not implemented
+	 *
 	 * Send chunk before server started
 	 * <p>
 	 * Server: High memory usage

@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace Lyrica0954\Mineleft\utils;
 
 use GMP;
+use Lyrica0954\Mineleft\network\protocol\types\BlockPosition;
 use pocketmine\math\Vector3;
 use pocketmine\utils\BinaryStream;
-use Ramsey\Uuid\Rfc4122\FieldsInterface;
 use Ramsey\Uuid\Uuid;
 use Ramsey\Uuid\UuidInterface;
-use RuntimeException;
 
-class BinaryUtils {
+class CodecHelper {
 
 	public static function putString(BinaryStream $stream, string $v): void {
 		$stream->putInt(strlen($v));
@@ -21,9 +20,6 @@ class BinaryUtils {
 
 	public static function putUUID(BinaryStream $stream, UuidInterface $uuid): void {
 		$fields = $uuid->getFields();
-		if (!$fields instanceof FieldsInterface) {
-			throw new RuntimeException("Requires RFC4122 uuid fields");
-		}
 		$hex = bin2hex($fields->getBytes());
 		$a = substr($hex, 0, 16);
 		$b = substr($hex, 16, 32);
@@ -45,6 +41,21 @@ class BinaryUtils {
 		// big-endian
 
 		return $buffer;
+	}
+
+	public static function putBlockPosition(BinaryStream $stream, BlockPosition $position): void {
+		// should use zig-zag int
+		$stream->putInt($position->x);
+		$stream->putInt($position->y);
+		$stream->putInt($position->z);
+	}
+
+	public static function getBlockPosition(BinaryStream $stream): BlockPosition {
+		return new BlockPosition(
+			$stream->getInt(),
+			$stream->getInt(),
+			$stream->getInt()
+		);
 	}
 
 	public static function getUUID(BinaryStream $stream): UuidInterface {

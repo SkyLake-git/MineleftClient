@@ -18,6 +18,7 @@ class LatencyHandler {
 	public function request(NetworkSession $session, Closure $onACK, bool $immediate = false): void {
 		$timestamp = self::nextTimestamp();
 
+		// todo: use internal
 		$packet = NetworkStackLatencyPacket::create($timestamp, false);
 
 		$session->sendDataPacketWithReceipt($packet, $immediate)->onCompletion($onACK, function(): void {

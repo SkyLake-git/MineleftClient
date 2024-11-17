@@ -8,32 +8,31 @@ use Lyrica0954\Mineleft\net\PacketBounds;
 use Lyrica0954\Mineleft\utils\CodecHelper;
 use pocketmine\utils\BinaryStream;
 
-class PacketLevelChunk extends MineleftPacket {
+/**
+ * Destroys server-side level chunk
+ */
+class PacketDestroyChunk extends MineleftPacket {
 
 	public int $x;
 
 	public int $z;
 
-	public string $extraPayload;
-
 	public string $worldName;
 
 	public function getProtocolId(): int {
-		return ProtocolIds::LEVEL_CHUNK;
+		return ProtocolIds::DESTROY_CHUNK;
 	}
 
 	public function encode(BinaryStream $out): void {
 		$out->putInt($this->x);
 		$out->putInt($this->z);
 
-		CodecHelper::putString($out, $this->extraPayload);
 		CodecHelper::putString($out, $this->worldName);
 	}
 
 	public function decode(BinaryStream $in): void {
 		$this->x = $in->getInt();
 		$this->z = $in->getInt();
-		$this->extraPayload = CodecHelper::getString($in);
 
 		$this->worldName = CodecHelper::getString($in);
 	}

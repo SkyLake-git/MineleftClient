@@ -5,13 +5,11 @@ declare(strict_types=1);
 namespace Lyrica0954\Mineleft\network\protocol;
 
 use Lyrica0954\Mineleft\net\PacketBounds;
-use Lyrica0954\Mineleft\utils\BinaryUtils;
 use pocketmine\utils\BinaryStream;
-use Ramsey\Uuid\UuidInterface;
 
 class PacketSetPlayerAttribute extends MineleftPacket {
 
-	public UuidInterface $playerUuid;
+	public int $profileRuntimeId;
 
 	public float $movementSpeed;
 
@@ -20,12 +18,12 @@ class PacketSetPlayerAttribute extends MineleftPacket {
 	}
 
 	public function encode(BinaryStream $out): void {
-		BinaryUtils::putUUID($out, $this->playerUuid);
+		$out->putInt($this->profileRuntimeId);
 		$out->putFloat($this->movementSpeed);
 	}
 
 	public function decode(BinaryStream $in): void {
-		$this->playerUuid = BinaryUtils::getUUID($in);
+		$this->profileRuntimeId = $in->getInt();
 		$this->movementSpeed = $in->getFloat();
 	}
 

@@ -6,13 +6,15 @@ namespace Lyrica0954\Mineleft\network\protocol;
 
 use Lyrica0954\Mineleft\net\PacketBounds;
 use Lyrica0954\Mineleft\network\protocol\types\PlayerInfo;
-use Lyrica0954\Mineleft\utils\BinaryUtils;
+use Lyrica0954\Mineleft\utils\CodecHelper;
 use pocketmine\math\Vector3;
 use pocketmine\utils\BinaryStream;
 
 class PacketPlayerLogin extends MineleftPacket {
 
 	public PlayerInfo $playerInfo;
+
+	public int $profileRuntimeId;
 
 	public string $worldName;
 
@@ -23,20 +25,21 @@ class PacketPlayerLogin extends MineleftPacket {
 	}
 
 	public function encode(BinaryStream $out): void {
-		BinaryUtils::putString($out, $this->playerInfo->getName());
-		BinaryUtils::putUUID($out, $this->playerInfo->getUuid());
-		BinaryUtils::putString($out, $this->worldName);
-		BinaryUtils::putVec3f($out, $this->position);
+		CodecHelper::putString($out, $this->playerInfo->getName());
+		CodecHelper::putUUID($out, $this->playerInfo->getUuid());
+		$out->putInt($this->profileRuntimeId);
+		CodecHelper::putString($out, $this->worldName);
+		CodecHelper::putVec3f($out, $this->position);
 	}
 
 	public function decode(BinaryStream $in): void {
-		$name = BinaryUtils::getString($in);
-		$uuid = BinaryUtils::getUUID($in);
+		$name = CodecHelper::getString($in);
+		$uuid = CodecHelper::getUUID($in);
 
 		$this->playerInfo = new PlayerInfo($name, $uuid);
-
-		$this->worldName = BinaryUtils::getString($in);
-		$this->position = BinaryUtils::getVec3f($in);
+		$this->profileRuntimeId = $in->getInt();
+		$this->worldName = CodecHelper::getString($in);
+		$this->position = CodecHelper::getVec3f($in);
 	}
 
 	public function bounds(): PacketBounds {

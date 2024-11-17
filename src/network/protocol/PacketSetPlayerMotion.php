@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace Lyrica0954\Mineleft\network\protocol;
 
 use Lyrica0954\Mineleft\net\PacketBounds;
-use Lyrica0954\Mineleft\utils\BinaryUtils;
+use Lyrica0954\Mineleft\utils\CodecHelper;
 use pocketmine\math\Vector3;
 use pocketmine\utils\BinaryStream;
-use Ramsey\Uuid\UuidInterface;
 
 class PacketSetPlayerMotion extends MineleftPacket {
 
-	public UuidInterface $playerUuid;
+	public int $profileRuntimeId;
 
 	public Vector3 $motion;
 
@@ -21,13 +20,13 @@ class PacketSetPlayerMotion extends MineleftPacket {
 	}
 
 	public function encode(BinaryStream $out): void {
-		BinaryUtils::putUUID($out, $this->playerUuid);
-		BinaryUtils::putVec3f($out, $this->motion);
+		$out->putInt($this->profileRuntimeId);
+		CodecHelper::putVec3f($out, $this->motion);
 	}
 
 	public function decode(BinaryStream $in): void {
-		$this->playerUuid = BinaryUtils::getUUID($in);
-		$this->motion = BinaryUtils::getVec3f($in);
+		$this->profileRuntimeId = $in->getInt();
+		$this->motion = CodecHelper::getVec3f($in);
 	}
 
 	public function bounds(): PacketBounds {

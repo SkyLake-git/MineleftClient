@@ -19,5 +19,7 @@ class ProtocolIds {
 	const PLAYER_EFFECT = 10;
 	const CORRECT_MOVEMENT = 11;
 	const SIMULATION_FRAME_DEBUG = 12;
+	const UPDATE_BLOCK = 13;
+	const DESTROY_CHUNK = 14;
 
 }

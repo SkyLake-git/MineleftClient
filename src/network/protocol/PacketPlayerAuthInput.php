@@ -6,14 +6,13 @@ namespace Lyrica0954\Mineleft\network\protocol;
 
 use Lyrica0954\Mineleft\net\PacketBounds;
 use Lyrica0954\Mineleft\network\protocol\types\InputData;
-use Lyrica0954\Mineleft\utils\BinaryUtils;
+use Lyrica0954\Mineleft\utils\CodecHelper;
 use pocketmine\math\Vector3;
 use pocketmine\utils\BinaryStream;
-use Ramsey\Uuid\UuidInterface;
 
 class PacketPlayerAuthInput extends MineleftPacket {
 
-	public UuidInterface $playerUuid;
+	public int $profileRuntimeId;
 
 	public int $frame;
 
@@ -31,10 +30,10 @@ class PacketPlayerAuthInput extends MineleftPacket {
 	}
 
 	public function encode(BinaryStream $out): void {
-		BinaryUtils::putUUID($out, $this->playerUuid);
+		$out->putInt($this->profileRuntimeId);
 		$out->putInt($this->frame);
 		$this->inputData->write($out);
-		BinaryUtils::putVec3f($out, $this->requestedPosition);
+		CodecHelper::putVec3f($out, $this->requestedPosition);
 		$out->putInt(count($this->nearbyBlocks));
 		foreach ($this->nearbyBlocks as $code => $block) {
 			$out->putLong($code);
@@ -43,13 +42,13 @@ class PacketPlayerAuthInput extends MineleftPacket {
 	}
 
 	public function decode(BinaryStream $in): void {
-		$this->playerUuid = BinaryUtils::getUUID($in);
+		$this->profileRuntimeId = $in->getInt();
 		$this->frame = $in->getInt();
 		$inputData = new InputData();
 		$inputData->read($in);
 
 		$this->inputData = $inputData;
-		$this->requestedPosition = BinaryUtils::getVec3f($in);
+		$this->requestedPosition = CodecHelper::getVec3f($in);
 
 		$this->nearbyBlocks = [];
 		$count = $in->getInt();

@@ -6,7 +6,7 @@ namespace Lyrica0954\Mineleft;
 
 use Lyrica0954\Mineleft\client\LatencyHandler;
 use Lyrica0954\Mineleft\client\MineleftClient;
-use Lyrica0954\Mineleft\player\PlayerSessionManager;
+use Lyrica0954\Mineleft\player\PlayerProfileManager;
 use Lyrica0954\Mineleft\rak\MineleftRakLibInterface;
 use pocketmine\data\bedrock\BiomeIds;
 use pocketmine\plugin\PluginBase;
@@ -42,14 +42,14 @@ class Main extends PluginBase {
 		self::$latencyHandler = new LatencyHandler();
 
 		$palette = new PalettedBlockArray(BiomeIds::OCEAN);
-		
+
 		$palette->set(-1, -1, -1, 100);
 		var_dump($palette->getWordArray());
 	}
 
 	protected function onEnable(): void {
 		$this->client = new MineleftClient($this->getServer(), "127.0.0.1", 19170, $this->getLogger());
-		PlayerSessionManager::initClient($this->client);
+		PlayerProfileManager::initClient($this->client);
 
 		$this->client->start();
 

@@ -9,6 +9,9 @@ use Lyrica0954\Mineleft\client\MineleftClient;
 use Lyrica0954\Mineleft\client\processor\PlayerAttributeProcessor;
 use Lyrica0954\Mineleft\network\protocol\PacketCorrectMovement;
 use Lyrica0954\Mineleft\network\protocol\PacketPlayerAuthInput;
+use Lyrica0954\Mineleft\network\protocol\PacketUpdateBlock;
+use Lyrica0954\Mineleft\network\protocol\types\BlockPosition;
+use Lyrica0954\Mineleft\network\protocol\types\ChunkSendingMethod;
 use Lyrica0954\Mineleft\network\protocol\types\InputData;
 use Lyrica0954\Mineleft\network\protocol\types\InputFlags;
 use Lyrica0954\Mineleft\utils\WorldUtils;
@@ -20,10 +23,13 @@ use pocketmine\network\mcpe\protocol\PlayerAuthInputPacket;
 use pocketmine\network\mcpe\protocol\types\entity\Attribute;
 use pocketmine\network\mcpe\protocol\types\PlayerAuthInputFlags;
 use pocketmine\player\Player;
+use pocketmine\world\World;
 use Ramsey\Uuid\UuidInterface;
 
 
-class PlayerSession {
+class PlayerProfile {
+
+	private int $runtimeId;
 
 	private bool $firstAuthInputFlag;
 
@@ -41,9 +47,12 @@ class PlayerSession {
 
 	private ?PacketCorrectMovement $queuedCorrectMovement;
 
+	private array $blockSyncPromises;
+
 	public function __construct(
 		private readonly MineleftClient $mineleftClient,
-		private readonly Player         $player
+		private readonly Player         $player,
+		int                             $runtimeId
 	) {
 		$this->actorStateStore = new ActorStateStore();
 		$this->firstAuthInputFlag = false;
@@ -53,6 +62,42 @@ class PlayerSession {
 		$this->tickId = 0;
 		$this->lastMovementCorrection = 0;
 		$this->queuedCorrectMovement = null;
+		$this->blockSyncPromises = [];
+		$this->runtimeId = $runtimeId;
+	}
+
+	/**
+	 * @return int
+	 */
+	public function getRuntimeId(): int {
+		return $this->runtimeId;
+	}
+
+	public function startBlockSync(Vector3 $position, int $previous, int $target): BlockSyncPromise {
+		return ($this->blockSyncPromises[World::blockHash($position->getFloorX(), $position->getFloorY(), $position->getFloorZ())] = new BlockSyncPromise($previous, $target))->then(fn() => $this->onCompleteBlockSync($position));
+	}
+
+	protected function onCompleteBlockSync(Vector3 $position): void {
+		$promise = $this->getBlockSync($position);
+
+		if ($promise === null) {
+			return;
+		}
+
+		unset($this->blockSyncPromises[World::blockHash($position->getFloorX(), $position->getFloorY(), $position->getFloorZ())]);
+
+		if ($this->mineleftClient->getChunkSendingMethod() !== ChunkSendingMethod::ALTERNATE) {
+			$packet = new PacketUpdateBlock();
+			$packet->blockPosition = new BlockPosition($position->getFloorX(), $position->getFloorY(), $position->getFloorZ());
+			$packet->block = $promise->getTarget();
+			$packet->viewerProfileRuntimeIds = [$this->runtimeId]; // todo:
+
+			$this->mineleftClient->getSession()->sendPacket($packet);
+		}
+	}
+
+	public function getBlockSync(Vector3 $position): ?BlockSyncPromise {
+		return $this->blockSyncPromises[World::blockHash($position->getFloorX(), $position->getFloorY(), $position->getFloorZ())] ?? null;
 	}
 
 	/**
@@ -114,7 +159,7 @@ class PlayerSession {
 	protected function sendAuthInputPacket(PlayerAuthInputPacket $packet): void {
 		$player = $this->player;
 		$pk = new PacketPlayerAuthInput();
-		$pk->playerUuid = $player->getUniqueId();
+		$pk->profileRuntimeId = $this->runtimeId;
 		$pk->frame = $this->tickId;
 		$pk->inputData = new InputData();
 		$pk->requestedPosition = $packet->getPosition();
@@ -131,7 +176,7 @@ class PlayerSession {
 				continue;
 			}
 			$pos = $block->getPosition();
-			$networkNearbyBlocks[morton3d_encode($pos->x, $pos->y, $pos->z)] = TypeConverter::getInstance()->getBlockTranslator()->internalIdToNetworkId($block->getStateId());
+			$networkNearbyBlocks[morton3d_encode($pos->x, $pos->y, $pos->z)] = $this->getSeeingBlockAt($pos);
 		}
 
 		$pk->nearbyBlocks = $networkNearbyBlocks;
@@ -191,6 +236,16 @@ class PlayerSession {
 		$pk->inputData->setPitch($packet->getPitch());
 
 		$this->mineleftClient->getSession()->sendPacket($pk);
+	}
+
+	public function getSeeingBlockAt(Vector3 $position): int {
+		$blockSync = $this->getBlockSync($position);
+
+		if ($blockSync !== null) {
+			return $blockSync->getPrevious();
+		} else {
+			return TypeConverter::getInstance()->getBlockTranslator()->internalIdToNetworkId($this->player->getWorld()->getBlock($position)->getStateId());
+		}
 	}
 
 	public function shouldCorrectMovement(int $frame): bool {

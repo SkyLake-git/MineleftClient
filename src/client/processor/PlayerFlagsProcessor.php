@@ -7,7 +7,7 @@ namespace Lyrica0954\Mineleft\client\processor;
 use Lyrica0954\Mineleft\client\MineleftClient;
 use Lyrica0954\Mineleft\network\protocol\PacketSetPlayerFlags;
 use Lyrica0954\Mineleft\network\protocol\types\PlayerFlags;
-use Lyrica0954\Mineleft\player\PlayerSession;
+use Lyrica0954\Mineleft\player\PlayerProfile;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataCollection;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataProperties;
@@ -15,9 +15,9 @@ use pocketmine\network\mcpe\protocol\types\entity\LongMetadataProperty;
 
 class PlayerFlagsProcessor {
 
-	public static function process(MineleftClient $client, PlayerSession $session): void {
+	public static function process(MineleftClient $client, PlayerProfile $session): void {
 		$packet = new PacketSetPlayerFlags();
-		$packet->playerUuid = $session->getUuid();
+		$packet->profileRuntimeId = $session->getRuntimeId();
 		$packet->flags = 0;
 
 		$stored = $session->getActorStateStore()->getMetadata($session->getPlayer()->getId());

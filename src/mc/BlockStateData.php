@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Lyrica0954\Mineleft\mc;
 
-use Lyrica0954\Mineleft\utils\BinaryUtils;
+use Lyrica0954\Mineleft\utils\CodecHelper;
 use pocketmine\utils\BinaryStream;
 
 class BlockStateData {
@@ -23,7 +23,7 @@ class BlockStateData {
 
 		$this->integerMap = [];
 		for ($i = 0; $i < $count; $i++) {
-			$this->integerMap[BinaryUtils::getString($stream)] = $stream->getInt();
+			$this->integerMap[CodecHelper::getString($stream)] = $stream->getInt();
 		}
 	}
 
@@ -31,7 +31,7 @@ class BlockStateData {
 		$stream->putInt(count($this->integerMap));
 
 		foreach ($this->integerMap as $k => $v) {
-			BinaryUtils::putString($stream, $k);
+			CodecHelper::putString($stream, $k);
 			$stream->putInt($v);
 		}
 	}

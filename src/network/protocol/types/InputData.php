@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Lyrica0954\Mineleft\network\protocol\types;
 
-use Lyrica0954\Mineleft\utils\BinaryUtils;
+use Lyrica0954\Mineleft\utils\CodecHelper;
 use pocketmine\math\Vector3;
 use pocketmine\utils\BinaryStream;
 
@@ -33,7 +33,7 @@ class InputData {
 
 	public function read(BinaryStream $stream): void {
 		$this->flags = $stream->getLong();
-		$this->delta = BinaryUtils::getVec3f($stream);
+		$this->delta = CodecHelper::getVec3f($stream);
 		$this->moveVecX = $stream->getFloat();
 		$this->moveVecZ = $stream->getFloat();
 		$this->yaw = $stream->getFloat();
@@ -42,7 +42,7 @@ class InputData {
 
 	public function write(BinaryStream $stream): void {
 		$stream->putLong($this->flags);
-		BinaryUtils::putVec3f($stream, $this->delta);
+		CodecHelper::putVec3f($stream, $this->delta);
 		$stream->putFloat($this->moveVecX);
 		$stream->putFloat($this->moveVecZ);
 		$stream->putFloat($this->yaw);

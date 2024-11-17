@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Lyrica0954\Mineleft\mc;
 
-use Lyrica0954\Mineleft\utils\BinaryUtils;
+use Lyrica0954\Mineleft\utils\CodecHelper;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\utils\BinaryStream;
 
@@ -29,6 +29,7 @@ class Block {
 	 * @param int $networkId
 	 * @param string $identifier
 	 * @param AxisAlignedBB[] $collisionBoxes
+	 * @param float $friction
 	 */
 	public function __construct(int $networkId, string $identifier, array $collisionBoxes, float $friction = 0.6) {
 		$this->networkId = $networkId;
@@ -91,7 +92,7 @@ class Block {
 
 	public function read(BinaryStream $stream): void {
 		$this->networkId = $stream->getInt();
-		$this->identifier = BinaryUtils::getString($stream);
+		$this->identifier = CodecHelper::getString($stream);
 		$this->collisionBoxes = [];
 		$count = $stream->getInt();
 		for ($i = 0; $i < $count; $i++) {
@@ -112,7 +113,7 @@ class Block {
 
 	public function write(BinaryStream $stream): void {
 		$stream->putInt($this->networkId);
-		BinaryUtils::putString($stream, $this->identifier);
+		CodecHelper::putString($stream, $this->identifier);
 		$stream->putInt(count($this->collisionBoxes));
 
 		foreach ($this->collisionBoxes as $box) {
