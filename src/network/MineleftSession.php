@@ -75,7 +75,7 @@ class MineleftSession {
 			return;
 		}
 
-		$this->logger->info("Received packet {$packet->getName()}");
+		//$this->logger->info("Received packet {$packet->getName()}");
 
 		$packet->callHandler($this->packetHandler);
 	}

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lyrica0954\Mineleft\player;
 
+use Logger;
 use Lyrica0954\Mineleft\client\ActorStateStore;
 use Lyrica0954\Mineleft\client\MineleftClient;
 use Lyrica0954\Mineleft\client\processor\PlayerAttributeProcessor;
@@ -15,16 +16,21 @@ use Lyrica0954\Mineleft\network\protocol\types\ChunkSendingMethod;
 use Lyrica0954\Mineleft\network\protocol\types\InputData;
 use Lyrica0954\Mineleft\network\protocol\types\InputFlags;
 use Lyrica0954\Mineleft\utils\WorldUtils;
-use pocketmine\block\Air;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\protocol\CorrectPlayerMovePredictionPacket;
 use pocketmine\network\mcpe\protocol\PlayerAuthInputPacket;
 use pocketmine\network\mcpe\protocol\types\entity\Attribute;
+use pocketmine\network\mcpe\protocol\types\PlayerAction;
 use pocketmine\network\mcpe\protocol\types\PlayerAuthInputFlags;
+use pocketmine\network\mcpe\protocol\types\PlayerBlockActionWithBlockInfo;
 use pocketmine\player\Player;
+use pocketmine\Server;
 use pocketmine\world\World;
+use PrefixedLogger;
 use Ramsey\Uuid\UuidInterface;
+use ReflectionClass;
+use ReflectionProperty;
 
 
 class PlayerProfile {
@@ -47,13 +53,21 @@ class PlayerProfile {
 
 	private ?PacketCorrectMovement $queuedCorrectMovement;
 
+	/**
+	 * @var BlockSyncPromise[]
+	 */
 	private array $blockSyncPromises;
+
+	private ReflectionProperty $playerAuthInputPacketBlockActionsProperty;
+
+	private Logger $logger;
 
 	public function __construct(
 		private readonly MineleftClient $mineleftClient,
 		private readonly Player         $player,
 		int                             $runtimeId
 	) {
+		$this->logger = new PrefixedLogger($this->mineleftClient->getSession()->getLogger(), "Profile: {$this->player->getName()}");
 		$this->actorStateStore = new ActorStateStore();
 		$this->firstAuthInputFlag = false;
 		$this->lastPosition = null;
@@ -64,6 +78,11 @@ class PlayerProfile {
 		$this->queuedCorrectMovement = null;
 		$this->blockSyncPromises = [];
 		$this->runtimeId = $runtimeId;
+		$this->playerAuthInputPacketBlockActionsProperty = (new ReflectionClass(PlayerAuthInputPacket::class))->getProperty("blockActions");
+	}
+
+	public function getLogger(): Logger {
+		return $this->logger;
 	}
 
 	/**
@@ -74,7 +93,10 @@ class PlayerProfile {
 	}
 
 	public function startBlockSync(Vector3 $position, int $previous, int $target): BlockSyncPromise {
+		$this->mineleftClient->getSession()->getLogger()->info("Starting block sync at $position tick: " . Server::getInstance()->getTick());
+
 		return ($this->blockSyncPromises[World::blockHash($position->getFloorX(), $position->getFloorY(), $position->getFloorZ())] = new BlockSyncPromise($previous, $target))->then(fn() => $this->onCompleteBlockSync($position));
+
 	}
 
 	protected function onCompleteBlockSync(Vector3 $position): void {
@@ -83,6 +105,8 @@ class PlayerProfile {
 		if ($promise === null) {
 			return;
 		}
+
+		$this->mineleftClient->getSession()->getLogger()->info("Synced at $position tick: " . Server::getInstance()->getTick());
 
 		unset($this->blockSyncPromises[World::blockHash($position->getFloorX(), $position->getFloorY(), $position->getFloorZ())]);
 
@@ -149,7 +173,32 @@ class PlayerProfile {
 			$this->tickId++;
 		}
 
+		$actions = [];
+		foreach ($packet->getBlockActions() ?? [] as $index => $blockAction) {
+			if ($blockAction instanceof PlayerBlockActionWithBlockInfo) {
+				// hiding these action because pmmp dropping packet for unknown action
+				if ($blockAction->getActionType() === PlayerAction::PREDICT_DESTROY_BLOCK) {
+					// worst server-authoritative-block-breaking implementation
+					$blockPos = $blockAction->getBlockPosition();
+					$position = new Vector3($blockPos->getX(), $blockPos->getY(), $blockPos->getZ());
+					$this->player->breakBlock($position);
+					continue;
+				} elseif ($blockAction->getActionType() === PlayerAction::CONTINUE_DESTROY_BLOCK) {
+					continue;
+				}
+			}
+			$actions[$index] = $blockAction;
+		}
+
+		$this->playerAuthInputPacketBlockActionsProperty->setValue($packet, $actions);
+
 		$this->sendAuthInputPacket($packet);
+
+		foreach ($this->blockSyncPromises as $blockSync) {
+			if ($blockSync->getSynchronizationPhase() === BlockSyncPromise::PHASE_ACK) {
+				$blockSync->nextSynchronizationPhase(BlockSyncPromise::PHASE_AUTH);
+			}
+		}
 
 		if ($this->shouldCorrectMovement($packet->getTick())) {
 			$this->sendCorrectMovement();
@@ -172,11 +221,11 @@ class PlayerProfile {
 		$this->lastPosition = $packet->getPosition();
 		$networkNearbyBlocks = [];
 		foreach ($nearbyBlocks as $block) {
-			if ($block instanceof Air) {
-				continue;
+			$seeingBlock = $this->getSeeingBlockAt($pos = $block->getPosition());
+			if ($seeingBlock === $this->mineleftClient->getNullBlockNetworkId()) {
+				continue; // air
 			}
-			$pos = $block->getPosition();
-			$networkNearbyBlocks[morton3d_encode($pos->x, $pos->y, $pos->z)] = $this->getSeeingBlockAt($pos);
+			$networkNearbyBlocks[morton3d_encode($pos->x, $pos->y, $pos->z)] = $seeingBlock;
 		}
 
 		$pk->nearbyBlocks = $networkNearbyBlocks;
@@ -242,6 +291,8 @@ class PlayerProfile {
 		$blockSync = $this->getBlockSync($position);
 
 		if ($blockSync !== null) {
+			$this->mineleftClient->getSession()->getLogger()->info("Using block sync cache $position");
+
 			return $blockSync->getPrevious();
 		} else {
 			return TypeConverter::getInstance()->getBlockTranslator()->internalIdToNetworkId($this->player->getWorld()->getBlock($position)->getStateId());

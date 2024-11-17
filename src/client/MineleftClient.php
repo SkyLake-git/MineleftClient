@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Lyrica0954\Mineleft\client;
 
 use Logger;
+use Lyrica0954\Mineleft\client\pmmp\MineleftEventListener;
 use Lyrica0954\Mineleft\mc\Block;
 use Lyrica0954\Mineleft\mc\BlockAttributeFlags;
 use Lyrica0954\Mineleft\network\MineleftSession;
@@ -29,9 +30,11 @@ use ReflectionClass;
 
 class MineleftClient {
 
+	protected int $nullBlockNetworkId;
+
 	protected MineleftSession $session;
 
-	protected MineleftPocketMineListener $listener;
+	protected MineleftEventListener $listener;
 
 	protected Server $pocketmine;
 
@@ -40,6 +43,8 @@ class MineleftClient {
 	protected ChunkSendingMethod $chunkSendingMethod;
 
 	protected ObjectSet $tickHooks;
+
+	protected MineleftBlockChangeManager $blockChangeManager;
 
 	public function __construct(
 		Server $server,
@@ -50,9 +55,14 @@ class MineleftClient {
 		$this->pocketmine = $server;
 		$this->tickHooks = new ObjectSet();
 		$this->sleeperHandlerEntry = null;
-		$this->chunkSendingMethod = ChunkSendingMethod::ALTERNATE;
+		$this->chunkSendingMethod = ChunkSendingMethod::REALTIME;
 		$this->session = MineleftSessionBootstrap::start($address, $port, $logger);
-		$this->listener = new MineleftPocketMineListener($this);
+		$this->listener = new MineleftEventListener($this);
+		$this->blockChangeManager = new MineleftBlockChangeManager();
+
+		foreach ($this->pocketmine->getWorldManager()->getWorlds() as $world) {
+			$this->blockChangeManager->createAdapter($world);
+		}
 	}
 
 	public function start(): void {
@@ -110,9 +120,6 @@ class MineleftClient {
 
 				if ($block instanceof Liquid) {
 					$netBlock->appendAttributeFlag(BlockAttributeFlags::LIQUID);
-
-					$falling = $block->isFalling() ? 'true' : 'false';
-					print_r("id: {$stateData->getName()} falling: {$falling} decay: " . $block->getDecay() . " depth: " . $stateData->getState("liquid_depth")->getValue() . "\n");
 				}
 
 				if ($block->canClimb()) {
@@ -130,6 +137,7 @@ class MineleftClient {
 
 				if (str_starts_with($stateData->getName(), "minecraft:air")) {
 					$packet->nullBlockNetworkId = $id;
+					$this->nullBlockNetworkId = $id;
 				}
 
 				$packet->mappings[$id] = $netBlock;
@@ -144,6 +152,17 @@ class MineleftClient {
 	 */
 	public function getSession(): MineleftSession {
 		return $this->session;
+	}
+
+	public function getBlockChangeManager(): MineleftBlockChangeManager {
+		return $this->blockChangeManager;
+	}
+
+	/**
+	 * @return int
+	 */
+	public function getNullBlockNetworkId(): int {
+		return $this->nullBlockNetworkId;
 	}
 
 	/**
@@ -168,9 +187,9 @@ class MineleftClient {
 	}
 
 	/**
-	 * @return MineleftPocketMineListener
+	 * @return MineleftEventListener
 	 */
-	public function getListener(): MineleftPocketMineListener {
+	public function getListener(): MineleftEventListener {
 		return $this->listener;
 	}
 

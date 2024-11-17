@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Lyrica0954\Mineleft\client;
+namespace Lyrica0954\Mineleft\client\pmmp;
 
 use Closure;
+use Lyrica0954\Mineleft\client\MineleftClient;
 use Lyrica0954\Mineleft\client\processor\PlayerAttributeProcessor;
 use Lyrica0954\Mineleft\client\processor\PlayerEffectProcessor;
 use Lyrica0954\Mineleft\client\processor\PlayerFlagsProcessor;
@@ -17,6 +18,7 @@ use Lyrica0954\Mineleft\network\protocol\PacketLevelChunk;
 use Lyrica0954\Mineleft\network\protocol\PacketPlayerLogin;
 use Lyrica0954\Mineleft\network\protocol\types\ChunkSendingMethod;
 use Lyrica0954\Mineleft\network\protocol\types\PlayerInfo;
+use Lyrica0954\Mineleft\player\BlockSyncPromise;
 use Lyrica0954\Mineleft\player\PlayerProfile;
 use Lyrica0954\Mineleft\player\PlayerProfileManager;
 use pocketmine\event\Listener;
@@ -27,6 +29,7 @@ use pocketmine\event\server\DataPacketSendEvent;
 use pocketmine\event\world\ChunkLoadEvent;
 use pocketmine\event\world\ChunkUnloadEvent;
 use pocketmine\event\world\WorldLoadEvent;
+use pocketmine\event\world\WorldUnloadEvent;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\protocol\ClientboundPacket;
@@ -43,9 +46,8 @@ use pocketmine\network\mcpe\protocol\types\ServerAuthMovementMode;
 use pocketmine\network\mcpe\protocol\UpdateAttributesPacket;
 use pocketmine\network\mcpe\protocol\UpdateBlockPacket;
 use pocketmine\player\Player;
-use pocketmine\world\World;
 
-class MineleftPocketMineListener implements Listener {
+class MineleftEventListener implements Listener {
 
 	/**
 	 * @var array<int, Player>
@@ -57,11 +59,14 @@ class MineleftPocketMineListener implements Listener {
 	 */
 	private array $beforeTickIdsMap;
 
+	private array $blockChangeAdapters;
+
 	public function __construct(
 		protected MineleftClient $client
 	) {
 		$this->playerByActorIdMap = [];
 		$this->beforeTickIdsMap = [];
+		$this->blockChangeAdapters = [];
 	}
 
 	public function onChunkUnload(ChunkUnloadEvent $event): void {
@@ -95,26 +100,28 @@ class MineleftPocketMineListener implements Listener {
 	}
 
 	public function onWorldLoad(WorldLoadEvent $event): void {
-
+		var_dump("created adapter on {$event->getWorld()->getFolderName()}");
+		$this->client->getBlockChangeManager()->createAdapter($event->getWorld());
 	}
 
-	public function processWorld(World $world): void {
-
+	public function onWorldUnload(WorldUnloadEvent $event): void {
+		$this->client->getBlockChangeManager()->deleteAdapter($event->getWorld());
 	}
 
 	public function onPlayerJoin(PlayerJoinEvent $event): void {
 		$player = $event->getPlayer();
 
+		$profile = PlayerProfileManager::createSession($player);
 		$packet = new PacketPlayerLogin();
 		$packet->worldName = $player->getWorld()->getFolderName();
 		$packet->playerInfo = new PlayerInfo($player->getName(), $player->getUniqueId());
+		$packet->profileRuntimeId = $profile->getRuntimeId();
 		$packet->position = $player->getPosition()->asVector3();
 
 		$this->client->getSession()->sendPacket($packet);
 
 		$this->playerByActorIdMap[$player->getId()] = $player;
 
-		PlayerProfileManager::createSession($player);
 	}
 
 	public function onPlayerQuit(PlayerQuitEvent $event): void {
@@ -138,13 +145,13 @@ class MineleftPocketMineListener implements Listener {
 				$packet->playerMovementSettings = new PlayerMovementSettings(
 					ServerAuthMovementMode::SERVER_AUTHORITATIVE_V3,
 					40,
-					false
+					true
 				);
 			}
 
 			/**
 			 * @template T of ClientboundPacket&DataPacket
-			 * @param T $packet
+			 * @param ClientboundPacket $packet
 			 * @param Closure(T, PlayerProfile): void $applier
 			 * @param Closure(): void $onACK
 			 * @return void
@@ -256,7 +263,17 @@ class MineleftPocketMineListener implements Listener {
 						 */
 
 						$position = new Vector3($packet->blockPosition->getX(), $packet->blockPosition->getY(), $packet->blockPosition->getZ());
-						$previous = TypeConverter::getInstance()->getBlockTranslator()->internalIdToNetworkId($session->getPlayer()->getWorld()->getBlock($position)->getStateId());
+						$previousBlock = $this->client->getBlockChangeManager()->fetchBlockChange($position->getFloorX(), $position->getFloorY(), $position->getFloorZ(), $session->getPlayer()->getWorld());
+
+						if ($previousBlock === null) {
+							// maybe plugin
+							$session->getLogger()->debug("Failed to start block synchronization (Previous block was null)");
+
+							return;
+						}
+
+						$previous = TypeConverter::getInstance()->getBlockTranslator()->internalIdToNetworkId($previousBlock->getStateId());
+						$session->getLogger()->debug("Syncing block at $position->x, $position->y, $position->z ($previous -> $packet->blockRuntimeId)");
 						$session->startBlockSync(
 							$position,
 							$previous,
@@ -265,7 +282,17 @@ class MineleftPocketMineListener implements Listener {
 					},
 					function(PlayerProfile $session) use ($packet): void {
 						$position = new Vector3($packet->blockPosition->getX(), $packet->blockPosition->getY(), $packet->blockPosition->getZ());
-						$session->getBlockSync($position)?->onSync();
+						$blockSync = $session->getBlockSync($position);
+
+						if ($blockSync === null) {
+							return;
+						}
+
+						if ($blockSync->getSynchronizationPhase() !== BlockSyncPromise::PHASE_NONE) {
+							return;
+						}
+
+						$session->getBlockSync($position)?->nextSynchronizationPhase(BlockSyncPromise::PHASE_ACK);
 					}
 				);
 			}
@@ -275,7 +302,7 @@ class MineleftPocketMineListener implements Listener {
 	/**
 	 * @param DataPacketReceiveEvent $event
 	 * @return void
-	 * @priority MONITOR
+	 * @priority HIGHEST
 	 * @handleCancelled
 	 */
 	public function onDataPacketReceive(DataPacketReceiveEvent $event): void {

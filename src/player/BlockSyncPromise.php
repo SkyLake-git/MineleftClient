@@ -10,6 +10,12 @@ use RuntimeException;
 
 class BlockSyncPromise {
 
+	const PHASE_NONE = 0;
+	const PHASE_ACK = 1;
+	const PHASE_AUTH = 2;
+
+	private int $synchronizationPhase;
+
 	private int $previous;
 
 	private int $target;
@@ -22,10 +28,37 @@ class BlockSyncPromise {
 		int $previous,
 		int $sync
 	) {
+		$this->synchronizationPhase = self::PHASE_NONE;
 		$this->previous = $previous;
 		$this->target = $sync;
 		$this->then = new ObjectSet();
 		$this->synced = false;
+	}
+
+	public function getSynchronizationPhase(): int {
+		return $this->synchronizationPhase;
+	}
+
+	public function nextSynchronizationPhase(int $synchronizationPhase): void {
+		if ($this->synchronizationPhase + 1 !== $synchronizationPhase) {
+			throw new RuntimeException("New synchronization phase must be next of the current phase");
+		}
+
+		$this->synchronizationPhase = $synchronizationPhase;
+
+		if ($synchronizationPhase === self::PHASE_ACK) { // need to wait auth?
+			$this->onSync();
+		}
+	}
+
+	protected function onSync(): void {
+		if ($this->synced) {
+			throw new RuntimeException("Already synced");
+		}
+		foreach ($this->then as $callback) {
+			($callback)($this);
+		}
+		$this->synced = true;
 	}
 
 	public function getPrevious(): int {
@@ -34,16 +67,6 @@ class BlockSyncPromise {
 
 	public function getTarget(): int {
 		return $this->target;
-	}
-
-	public function onSync(): void {
-		if ($this->synced) {
-			throw new RuntimeException("Already synced");
-		}
-		foreach ($this->then as $callback) {
-			($callback)($this);
-		}
-		$this->synced = true;
 	}
 
 	public function then(Closure $callback): self {
