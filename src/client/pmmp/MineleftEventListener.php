@@ -31,9 +31,9 @@ use pocketmine\event\world\ChunkUnloadEvent;
 use pocketmine\event\world\WorldLoadEvent;
 use pocketmine\event\world\WorldUnloadEvent;
 use pocketmine\math\Vector3;
-use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\protocol\ClientboundPacket;
 use pocketmine\network\mcpe\protocol\DataPacket;
+use pocketmine\network\mcpe\protocol\InventoryTransactionPacket;
 use pocketmine\network\mcpe\protocol\MobEffectPacket;
 use pocketmine\network\mcpe\protocol\MovePlayerPacket;
 use pocketmine\network\mcpe\protocol\NetworkStackLatencyPacket;
@@ -41,6 +41,7 @@ use pocketmine\network\mcpe\protocol\PlayerAuthInputPacket;
 use pocketmine\network\mcpe\protocol\SetActorDataPacket;
 use pocketmine\network\mcpe\protocol\SetActorMotionPacket;
 use pocketmine\network\mcpe\protocol\StartGamePacket;
+use pocketmine\network\mcpe\protocol\types\inventory\UseItemTransactionData;
 use pocketmine\network\mcpe\protocol\types\PlayerMovementSettings;
 use pocketmine\network\mcpe\protocol\types\ServerAuthMovementMode;
 use pocketmine\network\mcpe\protocol\UpdateAttributesPacket;
@@ -263,22 +264,11 @@ class MineleftEventListener implements Listener {
 						 */
 
 						$position = new Vector3($packet->blockPosition->getX(), $packet->blockPosition->getY(), $packet->blockPosition->getZ());
-						$previousBlock = $this->client->getBlockChangeManager()->fetchBlockChange($position->getFloorX(), $position->getFloorY(), $position->getFloorZ(), $session->getPlayer()->getWorld());
 
-						if ($previousBlock === null) {
-							// maybe plugin
-							$session->getLogger()->debug("Failed to start block synchronization (Previous block was null)");
-
-							return;
-						}
-
-						$previous = TypeConverter::getInstance()->getBlockTranslator()->internalIdToNetworkId($previousBlock->getStateId());
-						$session->getLogger()->debug("Syncing block at $position->x, $position->y, $position->z ($previous -> $packet->blockRuntimeId)");
-						$session->startBlockSync(
-							$position,
-							$previous,
-							$packet->blockRuntimeId
-						);
+						// fixme: really?
+						$session->startBlockSync($position, $packet->blockRuntimeId)?->onSync();
+						// client checks ACK?
+						// todo: further tests required
 					},
 					function(PlayerProfile $session) use ($packet): void {
 						$position = new Vector3($packet->blockPosition->getX(), $packet->blockPosition->getY(), $packet->blockPosition->getZ());
@@ -292,7 +282,7 @@ class MineleftEventListener implements Listener {
 							return;
 						}
 
-						$session->getBlockSync($position)?->nextSynchronizationPhase(BlockSyncPromise::PHASE_ACK);
+						$blockSync->nextSynchronizationPhase(BlockSyncPromise::PHASE_ACK);
 					}
 				);
 			}
@@ -324,7 +314,11 @@ class MineleftEventListener implements Listener {
 			}
 
 			PlayerProfileManager::getSession($player)->handleAuthInput($packet);
+		} elseif ($packet instanceof InventoryTransactionPacket) {
+			$trData = $packet->trData;
+			if ($trData instanceof UseItemTransactionData) {
+				PlayerProfileManager::getSession($player)->processBlockPlacing($trData);
+			}
 		}
-
 	}
 }

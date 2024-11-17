@@ -20,6 +20,7 @@ class MineleftBlockChangeAdapter {
 			$original->getGroup(),
 			function(int $x, int $y, int $z, Block $block): void {
 				$this->blockChanges[World::blockHash($x, $y, $z)] = $this->world->getBlockAt($x, $y, $z);
+				// todo:
 			},
 			function(): void {
 

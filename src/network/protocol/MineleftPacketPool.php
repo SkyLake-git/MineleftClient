@@ -30,6 +30,8 @@ class MineleftPacketPool implements IPacketPool {
 		$this->register(ProtocolIds::PLAYER_EFFECT, new PacketPlayerEffect());
 		$this->register(ProtocolIds::CORRECT_MOVEMENT, new PacketCorrectMovement());
 		$this->register(ProtocolIds::SIMULATION_FRAME_DEBUG, new PacketSimulationFrameDebug());
+		$this->register(ProtocolIds::UPDATE_BLOCK, new PacketUpdateBlock());
+		$this->register(ProtocolIds::DESTROY_CHUNK, new PacketDestroyChunk());
 	}
 
 	public function register(int $id, Packet $packet): void {

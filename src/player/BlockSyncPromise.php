@@ -51,7 +51,7 @@ class BlockSyncPromise {
 		}
 	}
 
-	protected function onSync(): void {
+	public function onSync(): void {
 		if ($this->synced) {
 			throw new RuntimeException("Already synced");
 		}

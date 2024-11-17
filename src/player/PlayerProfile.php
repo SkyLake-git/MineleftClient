@@ -16,11 +16,13 @@ use Lyrica0954\Mineleft\network\protocol\types\ChunkSendingMethod;
 use Lyrica0954\Mineleft\network\protocol\types\InputData;
 use Lyrica0954\Mineleft\network\protocol\types\InputFlags;
 use Lyrica0954\Mineleft\utils\WorldUtils;
+use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\protocol\CorrectPlayerMovePredictionPacket;
 use pocketmine\network\mcpe\protocol\PlayerAuthInputPacket;
 use pocketmine\network\mcpe\protocol\types\entity\Attribute;
+use pocketmine\network\mcpe\protocol\types\inventory\UseItemTransactionData;
 use pocketmine\network\mcpe\protocol\types\PlayerAction;
 use pocketmine\network\mcpe\protocol\types\PlayerAuthInputFlags;
 use pocketmine\network\mcpe\protocol\types\PlayerBlockActionWithBlockInfo;
@@ -60,6 +62,12 @@ class PlayerProfile {
 
 	private ReflectionProperty $playerAuthInputPacketBlockActionsProperty;
 
+	private ReflectionProperty $playerAuthInputPacketItemInteractionDataProperty;
+	
+	private float $lastBlockPlaceTime;
+
+	private ?UseItemTransactionData $lastBlockPlaceData;
+
 	private Logger $logger;
 
 	public function __construct(
@@ -79,6 +87,9 @@ class PlayerProfile {
 		$this->blockSyncPromises = [];
 		$this->runtimeId = $runtimeId;
 		$this->playerAuthInputPacketBlockActionsProperty = (new ReflectionClass(PlayerAuthInputPacket::class))->getProperty("blockActions");
+		$this->playerAuthInputPacketItemInteractionDataProperty = (new ReflectionClass(PlayerAuthInputPacket::class))->getProperty("itemInteractionData");
+		$this->lastBlockPlaceTime = 0;
+		$this->lastBlockPlaceData = null;
 	}
 
 	public function getLogger(): Logger {
@@ -90,38 +101,6 @@ class PlayerProfile {
 	 */
 	public function getRuntimeId(): int {
 		return $this->runtimeId;
-	}
-
-	public function startBlockSync(Vector3 $position, int $previous, int $target): BlockSyncPromise {
-		$this->mineleftClient->getSession()->getLogger()->info("Starting block sync at $position tick: " . Server::getInstance()->getTick());
-
-		return ($this->blockSyncPromises[World::blockHash($position->getFloorX(), $position->getFloorY(), $position->getFloorZ())] = new BlockSyncPromise($previous, $target))->then(fn() => $this->onCompleteBlockSync($position));
-
-	}
-
-	protected function onCompleteBlockSync(Vector3 $position): void {
-		$promise = $this->getBlockSync($position);
-
-		if ($promise === null) {
-			return;
-		}
-
-		$this->mineleftClient->getSession()->getLogger()->info("Synced at $position tick: " . Server::getInstance()->getTick());
-
-		unset($this->blockSyncPromises[World::blockHash($position->getFloorX(), $position->getFloorY(), $position->getFloorZ())]);
-
-		if ($this->mineleftClient->getChunkSendingMethod() !== ChunkSendingMethod::ALTERNATE) {
-			$packet = new PacketUpdateBlock();
-			$packet->blockPosition = new BlockPosition($position->getFloorX(), $position->getFloorY(), $position->getFloorZ());
-			$packet->block = $promise->getTarget();
-			$packet->viewerProfileRuntimeIds = [$this->runtimeId]; // todo:
-
-			$this->mineleftClient->getSession()->sendPacket($packet);
-		}
-	}
-
-	public function getBlockSync(Vector3 $position): ?BlockSyncPromise {
-		return $this->blockSyncPromises[World::blockHash($position->getFloorX(), $position->getFloorY(), $position->getFloorZ())] ?? null;
 	}
 
 	/**
@@ -147,13 +126,6 @@ class PlayerProfile {
 		return $this->actorStateStore;
 	}
 
-	/**
-	 * @return Player
-	 */
-	public function getPlayer(): Player {
-		return $this->player;
-	}
-
 	public function getUuid(): UuidInterface {
 		return $this->player->getUniqueId();
 	}
@@ -173,24 +145,14 @@ class PlayerProfile {
 			$this->tickId++;
 		}
 
-		$actions = [];
-		foreach ($packet->getBlockActions() ?? [] as $index => $blockAction) {
-			if ($blockAction instanceof PlayerBlockActionWithBlockInfo) {
-				// hiding these action because pmmp dropping packet for unknown action
-				if ($blockAction->getActionType() === PlayerAction::PREDICT_DESTROY_BLOCK) {
-					// worst server-authoritative-block-breaking implementation
-					$blockPos = $blockAction->getBlockPosition();
-					$position = new Vector3($blockPos->getX(), $blockPos->getY(), $blockPos->getZ());
-					$this->player->breakBlock($position);
-					continue;
-				} elseif ($blockAction->getActionType() === PlayerAction::CONTINUE_DESTROY_BLOCK) {
-					continue;
-				}
+		$this->processServerAuthoritativeBlockBreaking($packet);
+		$interactionData = $packet->getItemInteractionData();
+		if ($interactionData !== null) {
+			$this->processBlockPlacing($interactionData->getTransactionData());
+			if ($interactionData->getTransactionData()->getActionType() === UseItemTransactionData::ACTION_CLICK_BLOCK) {
+				$this->playerAuthInputPacketItemInteractionDataProperty->setValue($packet);
 			}
-			$actions[$index] = $blockAction;
 		}
-
-		$this->playerAuthInputPacketBlockActionsProperty->setValue($packet, $actions);
 
 		$this->sendAuthInputPacket($packet);
 
@@ -202,6 +164,89 @@ class PlayerProfile {
 
 		if ($this->shouldCorrectMovement($packet->getTick())) {
 			$this->sendCorrectMovement();
+		}
+	}
+
+	public function processServerAuthoritativeBlockBreaking(PlayerAuthInputPacket $packet): void {
+		$actions = [];
+		foreach ($packet->getBlockActions() ?? [] as $index => $blockAction) {
+			if ($blockAction instanceof PlayerBlockActionWithBlockInfo) {
+				// hiding these action because pmmp dropping packet for unknown action
+				if ($blockAction->getActionType() === PlayerAction::PREDICT_DESTROY_BLOCK) {
+					// worst server-authoritative-block-breaking implementation
+					$blockPos = $blockAction->getBlockPosition();
+					$position = new Vector3($blockPos->getX(), $blockPos->getY(), $blockPos->getZ());
+					if ($this->player->breakBlock($position)) {
+						// Also needed when blocks are changed on the server side (performance?)
+						WorldUtils::broadcastUpdateBlockImmediately($this->player->getWorld(), $position);
+					}
+					continue;
+				} elseif ($blockAction->getActionType() === PlayerAction::CONTINUE_DESTROY_BLOCK) {
+					continue;
+				}
+			}
+			$actions[$index] = $blockAction;
+		}
+
+		$this->playerAuthInputPacketBlockActionsProperty->setValue($packet, $actions);
+	}
+
+	public function processBlockPlacing(UseItemTransactionData $useItem): void {
+
+		if ($useItem->getActionType() === UseItemTransactionData::ACTION_CLICK_BLOCK) {
+			$handItem = $useItem->getItemInHand();
+
+			$this->logger->info("Overrode");
+
+			// pmmp
+			$spamBug = ($this->lastBlockPlaceData !== null &&
+				microtime(true) - $this->lastBlockPlaceTime < 0.1 &&
+				$this->lastBlockPlaceData->getPlayerPosition()->distanceSquared($useItem->getPlayerPosition()) < 0.00001 &&
+				$this->lastBlockPlaceData->getBlockPosition()->equals($useItem->getBlockPosition()) &&
+				$this->lastBlockPlaceData->getClickPosition()->distanceSquared($useItem->getClickPosition()) < 0.00001
+			);
+			// ---
+
+			$this->lastBlockPlaceData = $useItem;
+			$this->lastBlockPlaceTime = microtime(true);
+			if ($spamBug) {
+				return;
+			}
+
+			if (!in_array($useItem->getFace(), Facing::ALL, true)) {
+				return;
+			}
+
+			if (!$handItem->getItemStack()->isNull()) {
+				$blockPos = $useItem->getBlockPosition();
+				$vector = new Vector3(
+					$blockPos->getX(),
+					$blockPos->getY(),
+					$blockPos->getZ()
+				);
+
+				if (!$this->player->interactBlock($vector, $useItem->getFace(), $useItem->getClickPosition())) {
+					// ---- pmmp
+					if ($vector->distanceSquared($this->player->getLocation()) < 10000) {
+						$blocks = $vector->sidesArray();
+						if ($useItem->getFace() !== null) {
+							$sidePos = $vector->getSide($useItem->getFace());
+
+							array_push($blocks, ...$sidePos->sidesArray()); //getAllSides() on each of these will include $blockPos and $sidePos because they are next to each other
+						} else {
+							$blocks[] = $blockPos;
+						}
+						foreach ($this->player->getWorld()->createBlockUpdatePackets($blocks) as $packet) {
+							$this->player->getNetworkSession()->sendDataPacket($packet);
+						}
+					}
+					// ----
+				} else {
+					$this->logger->info("Placed");
+					WorldUtils::broadcastUpdateBlockImmediately($this->player->getWorld(), new Vector3($blockPos->getX(), $blockPos->getY(), $blockPos->getZ()));
+				}
+				// fixme: hack
+			}
 		}
 	}
 
@@ -299,6 +344,10 @@ class PlayerProfile {
 		}
 	}
 
+	public function getBlockSync(Vector3 $position): ?BlockSyncPromise {
+		return $this->blockSyncPromises[World::blockHash($position->getFloorX(), $position->getFloorY(), $position->getFloorZ())] ?? null;
+	}
+
 	public function shouldCorrectMovement(int $frame): bool {
 		return $frame - $this->lastMovementCorrection > 10;
 	}
@@ -324,5 +373,59 @@ class PlayerProfile {
 
 		$this->lastMovementCorrection = $packet->frame;
 		$this->queuedCorrectMovement = null;
+	}
+
+	public function startBlockSync(Vector3 $position, int $target): ?BlockSyncPromise {
+		$previousBlock = $this->mineleftClient->getBlockChangeManager()->fetchBlockChange($position->getFloorX(), $position->getFloorY(), $position->getFloorZ(), $this->getPlayer()->getWorld());
+
+		if ($previousBlock === null) {
+			// maybe plugin
+			$this->getLogger()->debug("Failed to start block synchronization (Previous block was null)");
+
+			return null;
+		}
+
+		$previous = TypeConverter::getInstance()->getBlockTranslator()->internalIdToNetworkId($previousBlock->getStateId());
+		$this->getLogger()->debug("Syncing block at $position->x, $position->y, $position->z ($previous -> $target)");
+
+		return $this->registerBlockSync(
+			$position,
+			$previous,
+			$target
+		);
+	}
+
+	/**
+	 * @return Player
+	 */
+	public function getPlayer(): Player {
+		return $this->player;
+	}
+
+	public function registerBlockSync(Vector3 $position, int $previous, int $target): BlockSyncPromise {
+		$this->mineleftClient->getSession()->getLogger()->info("Starting block sync at $position tick: " . Server::getInstance()->getTick());
+
+		return ($this->blockSyncPromises[World::blockHash($position->getFloorX(), $position->getFloorY(), $position->getFloorZ())] = new BlockSyncPromise($previous, $target))->then(fn() => $this->onCompleteBlockSync($position));
+	}
+
+	protected function onCompleteBlockSync(Vector3 $position): void {
+		$promise = $this->getBlockSync($position);
+
+		if ($promise === null) {
+			return;
+		}
+
+		$this->mineleftClient->getSession()->getLogger()->info("Synced at $position tick: " . Server::getInstance()->getTick());
+
+		unset($this->blockSyncPromises[World::blockHash($position->getFloorX(), $position->getFloorY(), $position->getFloorZ())]);
+
+		if ($this->mineleftClient->getChunkSendingMethod() !== ChunkSendingMethod::ALTERNATE) {
+			$packet = new PacketUpdateBlock();
+			$packet->blockPosition = new BlockPosition($position->getFloorX(), $position->getFloorY(), $position->getFloorZ());
+			$packet->block = $promise->getTarget();
+			$packet->viewerProfileRuntimeIds = [$this->runtimeId]; // todo:
+
+			$this->mineleftClient->getSession()->sendPacket($packet);
+		}
 	}
 }
