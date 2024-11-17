@@ -301,6 +301,14 @@ class MineleftEventListener implements Listener {
 
 		if ($packet instanceof PlayerAuthInputPacket) {
 			$uuid = $event->getOrigin()->getPlayerInfo()->getUuid()->toString();
+
+			if (!$this->checkPosition($packet->getPosition())) {
+				$event->getOrigin()->disconnect("Invalid position", "Disconnected from server");
+				$this->client->getSession()->getLogger()->error("Y out of range: {$packet->getPosition()->y}, disconnecting client");
+				$event->cancel();
+
+				return;
+			}
 			if (is_null($player) || !$player->isOnline() || !$player->spawned) {
 				$this->beforeTickIdsMap[$uuid] ??= $packet->getTick();
 				$this->beforeTickIdsMap[$uuid]++;
@@ -313,6 +321,7 @@ class MineleftEventListener implements Listener {
 				unset($this->beforeTickIdsMap[$uuid]);
 			}
 
+
 			PlayerProfileManager::getSession($player)->handleAuthInput($packet);
 		} elseif ($packet instanceof InventoryTransactionPacket) {
 			$trData = $packet->trData;
@@ -320,5 +329,15 @@ class MineleftEventListener implements Listener {
 				PlayerProfileManager::getSession($player)->processBlockPlacing($trData);
 			}
 		}
+	}
+
+	protected function checkPosition(Vector3 $position): bool {
+		$y = $position->getFloorY();
+		$shiftedY = $y + 128; // BLOCKHASH_Y_OFFSET
+		if (($shiftedY & (~0 << 9)) !== 0) { // BLOCKHASH_Y_BITS
+			return false;
+		}
+
+		return true;
 	}
 }

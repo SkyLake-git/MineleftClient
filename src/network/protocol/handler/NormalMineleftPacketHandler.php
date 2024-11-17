@@ -45,6 +45,7 @@ class NormalMineleftPacketHandler implements IMineleftPacketHandler {
 			}
 			$processingDelay = $playerProfile->getTickId() - $packet->frame;
 			$playerProfile->getPlayer()->sendActionBarMessage("§7---------- Mineleft ----------\n§qProcessing Delay: §c$processingDelay F\n§qPosition Dist§7: §c$posDiff   §qDelta Dist§7: §c$deltaDiff");
+			$playerProfile->getDebuggingProfile()->handleSimulationFrameDebug($packet);
 		}
 	}
 }

@@ -15,6 +15,7 @@ use Lyrica0954\Mineleft\network\protocol\types\BlockPosition;
 use Lyrica0954\Mineleft\network\protocol\types\ChunkSendingMethod;
 use Lyrica0954\Mineleft\network\protocol\types\InputData;
 use Lyrica0954\Mineleft\network\protocol\types\InputFlags;
+use Lyrica0954\Mineleft\player\debug\PlayerDebuggingProfile;
 use Lyrica0954\Mineleft\utils\WorldUtils;
 use pocketmine\math\Facing;
 use pocketmine\math\Vector3;
@@ -27,7 +28,6 @@ use pocketmine\network\mcpe\protocol\types\PlayerAction;
 use pocketmine\network\mcpe\protocol\types\PlayerAuthInputFlags;
 use pocketmine\network\mcpe\protocol\types\PlayerBlockActionWithBlockInfo;
 use pocketmine\player\Player;
-use pocketmine\Server;
 use pocketmine\world\World;
 use PrefixedLogger;
 use Ramsey\Uuid\UuidInterface;
@@ -63,12 +63,14 @@ class PlayerProfile {
 	private ReflectionProperty $playerAuthInputPacketBlockActionsProperty;
 
 	private ReflectionProperty $playerAuthInputPacketItemInteractionDataProperty;
-	
+
 	private float $lastBlockPlaceTime;
 
 	private ?UseItemTransactionData $lastBlockPlaceData;
 
 	private Logger $logger;
+
+	private PlayerDebuggingProfile $debuggingProfile;
 
 	public function __construct(
 		private readonly MineleftClient $mineleftClient,
@@ -90,10 +92,15 @@ class PlayerProfile {
 		$this->playerAuthInputPacketItemInteractionDataProperty = (new ReflectionClass(PlayerAuthInputPacket::class))->getProperty("itemInteractionData");
 		$this->lastBlockPlaceTime = 0;
 		$this->lastBlockPlaceData = null;
+		$this->debuggingProfile = new PlayerDebuggingProfile($this->mineleftClient, $this->player);
 	}
 
 	public function getLogger(): Logger {
 		return $this->logger;
+	}
+
+	public function getDebuggingProfile(): PlayerDebuggingProfile {
+		return $this->debuggingProfile;
 	}
 
 	/**
@@ -196,8 +203,6 @@ class PlayerProfile {
 		if ($useItem->getActionType() === UseItemTransactionData::ACTION_CLICK_BLOCK) {
 			$handItem = $useItem->getItemInHand();
 
-			$this->logger->info("Overrode");
-
 			// pmmp
 			$spamBug = ($this->lastBlockPlaceData !== null &&
 				microtime(true) - $this->lastBlockPlaceTime < 0.1 &&
@@ -242,7 +247,6 @@ class PlayerProfile {
 					}
 					// ----
 				} else {
-					$this->logger->info("Placed");
 					WorldUtils::broadcastUpdateBlockImmediately($this->player->getWorld(), new Vector3($blockPos->getX(), $blockPos->getY(), $blockPos->getZ()));
 				}
 				// fixme: hack
@@ -336,8 +340,6 @@ class PlayerProfile {
 		$blockSync = $this->getBlockSync($position);
 
 		if ($blockSync !== null) {
-			$this->mineleftClient->getSession()->getLogger()->info("Using block sync cache $position");
-
 			return $blockSync->getPrevious();
 		} else {
 			return TypeConverter::getInstance()->getBlockTranslator()->internalIdToNetworkId($this->player->getWorld()->getBlock($position)->getStateId());
@@ -403,8 +405,6 @@ class PlayerProfile {
 	}
 
 	public function registerBlockSync(Vector3 $position, int $previous, int $target): BlockSyncPromise {
-		$this->mineleftClient->getSession()->getLogger()->info("Starting block sync at $position tick: " . Server::getInstance()->getTick());
-
 		return ($this->blockSyncPromises[World::blockHash($position->getFloorX(), $position->getFloorY(), $position->getFloorZ())] = new BlockSyncPromise($previous, $target))->then(fn() => $this->onCompleteBlockSync($position));
 	}
 
@@ -415,7 +415,7 @@ class PlayerProfile {
 			return;
 		}
 
-		$this->mineleftClient->getSession()->getLogger()->info("Synced at $position tick: " . Server::getInstance()->getTick());
+		$this->logger->debug("Synced block $position");
 
 		unset($this->blockSyncPromises[World::blockHash($position->getFloorX(), $position->getFloorY(), $position->getFloorZ())]);
 

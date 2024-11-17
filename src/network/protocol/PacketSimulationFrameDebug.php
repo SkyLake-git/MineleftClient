@@ -20,6 +20,10 @@ class PacketSimulationFrameDebug extends MineleftPacket {
 
 	public Vector3 $delta;
 
+	public float $yaw;
+
+	public float $pitch;
+
 	public Vector3 $clientPosition;
 
 	public Vector3 $clientDelta;
@@ -33,6 +37,8 @@ class PacketSimulationFrameDebug extends MineleftPacket {
 		$out->putInt($this->frame);
 		CodecHelper::putVec3f($out, $this->position);
 		CodecHelper::putVec3f($out, $this->delta);
+		$out->putFloat($this->yaw);
+		$out->putFloat($this->pitch);
 		CodecHelper::putVec3f($out, $this->clientPosition);
 		CodecHelper::putVec3f($out, $this->clientDelta);
 	}
@@ -43,6 +49,8 @@ class PacketSimulationFrameDebug extends MineleftPacket {
 		$this->frame = $in->getInt();
 		$this->position = CodecHelper::getVec3f($in);
 		$this->delta = CodecHelper::getVec3f($in);
+		$this->yaw = $in->getFloat();
+		$this->pitch = $in->getFloat();
 		$this->clientPosition = CodecHelper::getVec3f($in);
 		$this->clientDelta = CodecHelper::getVec3f($in);
 	}
