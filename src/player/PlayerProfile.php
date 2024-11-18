@@ -72,6 +72,11 @@ class PlayerProfile {
 
 	private PlayerDebuggingProfile $debuggingProfile;
 
+	/**
+	 * @var array<int, void>
+	 */
+	private array $clientSideUpdatedBlocks;
+
 	public function __construct(
 		private readonly MineleftClient $mineleftClient,
 		private readonly Player         $player,
@@ -93,6 +98,7 @@ class PlayerProfile {
 		$this->lastBlockPlaceTime = 0;
 		$this->lastBlockPlaceData = null;
 		$this->debuggingProfile = new PlayerDebuggingProfile($this->mineleftClient, $this->player);
+		$this->clientSideUpdatedBlocks = [];
 	}
 
 	public function getLogger(): Logger {
@@ -184,8 +190,8 @@ class PlayerProfile {
 					$blockPos = $blockAction->getBlockPosition();
 					$position = new Vector3($blockPos->getX(), $blockPos->getY(), $blockPos->getZ());
 					if ($this->player->breakBlock($position)) {
-						// Also needed when blocks are changed on the server side (performance?)
 						WorldUtils::broadcastUpdateBlockImmediately($this->player->getWorld(), $position);
+						$this->clientSideUpdatedBlocks[World::blockHash($blockPos->getX(), $blockPos->getY(), $blockPos->getZ())] = null;
 					}
 					continue;
 				} elseif ($blockAction->getActionType() === PlayerAction::CONTINUE_DESTROY_BLOCK) {
@@ -248,6 +254,7 @@ class PlayerProfile {
 					// ----
 				} else {
 					WorldUtils::broadcastUpdateBlockImmediately($this->player->getWorld(), new Vector3($blockPos->getX(), $blockPos->getY(), $blockPos->getZ()));
+					$this->clientSideUpdatedBlocks[World::blockHash($blockPos->getX(), $blockPos->getY(), $blockPos->getZ())] = null;
 				}
 				// fixme: hack
 			}
@@ -378,6 +385,7 @@ class PlayerProfile {
 	}
 
 	public function startBlockSync(Vector3 $position, int $target): ?BlockSyncPromise {
+		$hash = World::blockHash($position->getFloorX(), $position->getFloorY(), $position->getFloorZ());
 		$previousBlock = $this->mineleftClient->getBlockChangeManager()->fetchBlockChange($position->getFloorX(), $position->getFloorY(), $position->getFloorZ(), $this->getPlayer()->getWorld());
 
 		if ($previousBlock === null) {
@@ -390,11 +398,20 @@ class PlayerProfile {
 		$previous = TypeConverter::getInstance()->getBlockTranslator()->internalIdToNetworkId($previousBlock->getStateId());
 		$this->getLogger()->debug("Syncing block at $position->x, $position->y, $position->z ($previous -> $target)");
 
-		return $this->registerBlockSync(
+
+		$blockSync = $this->registerBlockSync(
 			$position,
 			$previous,
 			$target
 		);
+
+		if (isset($this->clientSideUpdatedBlocks[$hash])) {
+			// if the block update was client-sided, mark as synchronized
+			$blockSync->onSync();
+			unset($this->clientSideUpdatedBlocks[$hash]);
+		}
+
+		return $blockSync;
 	}
 
 	/**

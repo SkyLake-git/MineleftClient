@@ -264,11 +264,8 @@ class MineleftEventListener implements Listener {
 						 */
 
 						$position = new Vector3($packet->blockPosition->getX(), $packet->blockPosition->getY(), $packet->blockPosition->getZ());
-
-						// fixme: really?
-						$session->startBlockSync($position, $packet->blockRuntimeId)?->onSync();
-						// client checks ACK?
-						// todo: further tests required
+						
+						$session->startBlockSync($position, $packet->blockRuntimeId);
 					},
 					function(PlayerProfile $session) use ($packet): void {
 						$position = new Vector3($packet->blockPosition->getX(), $packet->blockPosition->getY(), $packet->blockPosition->getZ());
