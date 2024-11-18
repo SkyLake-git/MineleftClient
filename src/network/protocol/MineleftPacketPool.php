@@ -32,6 +32,7 @@ class MineleftPacketPool implements IPacketPool {
 		$this->register(ProtocolIds::SIMULATION_FRAME_DEBUG, new PacketSimulationFrameDebug());
 		$this->register(ProtocolIds::UPDATE_BLOCK, new PacketUpdateBlock());
 		$this->register(ProtocolIds::DESTROY_CHUNK, new PacketDestroyChunk());
+		$this->register(ProtocolIds::UPDATE_PROFILE_SETTINGS, new PacketUpdateProfileSettings());
 	}
 
 	public function register(int $id, Packet $packet): void {

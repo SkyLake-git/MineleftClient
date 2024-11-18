@@ -11,10 +11,12 @@ use Lyrica0954\Mineleft\client\processor\PlayerAttributeProcessor;
 use Lyrica0954\Mineleft\network\protocol\PacketCorrectMovement;
 use Lyrica0954\Mineleft\network\protocol\PacketPlayerAuthInput;
 use Lyrica0954\Mineleft\network\protocol\PacketUpdateBlock;
+use Lyrica0954\Mineleft\network\protocol\PacketUpdateProfileSettings;
 use Lyrica0954\Mineleft\network\protocol\types\BlockPosition;
 use Lyrica0954\Mineleft\network\protocol\types\ChunkSendingMethod;
 use Lyrica0954\Mineleft\network\protocol\types\InputData;
 use Lyrica0954\Mineleft\network\protocol\types\InputFlags;
+use Lyrica0954\Mineleft\network\protocol\types\ProfileDebugOptions;
 use Lyrica0954\Mineleft\player\debug\PlayerDebuggingProfile;
 use Lyrica0954\Mineleft\utils\WorldUtils;
 use pocketmine\math\Facing;
@@ -105,6 +107,27 @@ class PlayerProfile {
 		return $this->logger;
 	}
 
+	public function setDebugSimulationEnabled(bool $v): void {
+		$this->debuggingProfile->getOption()->simulation = $v;
+		if ($v) {
+			$this->debuggingProfile->spawnSimulatingEntity();
+		} else {
+			$this->debuggingProfile->despawnSimulatingEntity();
+		}
+		$this->onChangedProfileSettings();
+	}
+
+	protected function onChangedProfileSettings(): void {
+		$packet = new PacketUpdateProfileSettings();
+		$packet->profileRuntimeId = $this->runtimeId;
+		$packet->debugOptions = new ProfileDebugOptions($this->debuggingProfile->getOption()->simulation);
+		$this->mineleftClient->getSession()->sendPacket($packet);
+	}
+
+	public function isDebugSimulationEnabled(): bool {
+		return $this->debuggingProfile->getOption()->simulation;
+	}
+
 	public function getDebuggingProfile(): PlayerDebuggingProfile {
 		return $this->debuggingProfile;
 	}
@@ -127,6 +150,7 @@ class PlayerProfile {
 
 	/**
 	 * @param int $tickId
+	 * @internal
 	 */
 	public function setTickId(int $tickId): void {
 		$this->tickId = $tickId;

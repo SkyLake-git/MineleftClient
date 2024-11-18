@@ -120,6 +120,8 @@ class MineleftEventListener implements Listener {
 		$packet->position = $player->getPosition()->asVector3();
 
 		$this->client->getSession()->sendPacket($packet);
+		
+		$profile->setDebugSimulationEnabled(true);
 
 		$this->playerByActorIdMap[$player->getId()] = $player;
 
@@ -264,7 +266,7 @@ class MineleftEventListener implements Listener {
 						 */
 
 						$position = new Vector3($packet->blockPosition->getX(), $packet->blockPosition->getY(), $packet->blockPosition->getZ());
-						
+
 						$session->startBlockSync($position, $packet->blockRuntimeId);
 					},
 					function(PlayerProfile $session) use ($packet): void {

@@ -21,5 +21,6 @@ class ProtocolIds {
 	const SIMULATION_FRAME_DEBUG = 12;
 	const UPDATE_BLOCK = 13;
 	const DESTROY_CHUNK = 14;
+	const UPDATE_PROFILE_SETTINGS = 15;
 
 }

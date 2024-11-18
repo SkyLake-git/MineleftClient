@@ -28,6 +28,25 @@ class PlayerDebuggingProfile {
 		$this->virtualEntity = null;
 	}
 
+	/**
+	 * @return MineleftDebugOption
+	 */
+	public function getOption(): MineleftDebugOption {
+		return $this->option;
+	}
+
+	public function despawnSimulatingEntity(): void {
+		if ($this->virtualEntity === null) {
+			return;
+		}
+		$this->virtualEntity->despawnFrom($this->player);
+		$this->virtualEntity = null;
+	}
+
+	public function isSimulationEnabled(): bool {
+		return $this->option->simulation;
+	}
+
 	public function handleSimulationFrameDebug(PacketSimulationFrameDebug $packet): void {
 		if (!$this->option->simulation) {
 			return;
@@ -40,7 +59,7 @@ class PlayerDebuggingProfile {
 		$this->virtualEntity->broadcastMovement($packet->position, $packet->yaw, $packet->pitch);
 	}
 
-	protected function spawnSimulatingEntity(): void {
+	public function spawnSimulatingEntity(): void {
 		if ($this->virtualEntity !== null) {
 			return;
 		}

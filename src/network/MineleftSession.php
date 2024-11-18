@@ -54,6 +54,7 @@ class MineleftSession {
 	}
 
 	public function socketTick(): void {
+		// todo: thread
 		while (($batch = $this->wrapper->readPacket()) !== null) {
 			foreach ($batch as $packet) {
 				if (!$packet instanceof MineleftPacket) {
