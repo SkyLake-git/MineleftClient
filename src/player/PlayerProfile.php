@@ -73,7 +73,7 @@ class PlayerProfile {
 	private PlayerDebuggingProfile $debuggingProfile;
 
 	/**
-	 * @var array<int, void>
+	 * @var array<int, true>
 	 */
 	private array $clientSideUpdatedBlocks;
 
@@ -190,8 +190,8 @@ class PlayerProfile {
 					$blockPos = $blockAction->getBlockPosition();
 					$position = new Vector3($blockPos->getX(), $blockPos->getY(), $blockPos->getZ());
 					if ($this->player->breakBlock($position)) {
+						$this->clientSideUpdatedBlocks[World::blockHash($blockPos->getX(), $blockPos->getY(), $blockPos->getZ())] = true;
 						WorldUtils::broadcastUpdateBlockImmediately($this->player->getWorld(), $position);
-						$this->clientSideUpdatedBlocks[World::blockHash($blockPos->getX(), $blockPos->getY(), $blockPos->getZ())] = null;
 					}
 					continue;
 				} elseif ($blockAction->getActionType() === PlayerAction::CONTINUE_DESTROY_BLOCK) {
@@ -205,7 +205,6 @@ class PlayerProfile {
 	}
 
 	public function processBlockPlacing(UseItemTransactionData $useItem): void {
-
 		if ($useItem->getActionType() === UseItemTransactionData::ACTION_CLICK_BLOCK) {
 			$handItem = $useItem->getItemInHand();
 
@@ -253,8 +252,8 @@ class PlayerProfile {
 					}
 					// ----
 				} else {
+					$this->clientSideUpdatedBlocks[World::blockHash($blockPos->getX(), $blockPos->getY(), $blockPos->getZ())] = true;
 					WorldUtils::broadcastUpdateBlockImmediately($this->player->getWorld(), new Vector3($blockPos->getX(), $blockPos->getY(), $blockPos->getZ()));
-					$this->clientSideUpdatedBlocks[World::blockHash($blockPos->getX(), $blockPos->getY(), $blockPos->getZ())] = null;
 				}
 				// fixme: hack
 			}

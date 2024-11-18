@@ -7,6 +7,8 @@ namespace Lyrica0954\Mineleft\client;
 use Closure;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\NetworkStackLatencyPacket;
+use pocketmine\promise\PromiseResolver;
+use RuntimeException;
 
 class LatencyHandler {
 
@@ -16,14 +18,30 @@ class LatencyHandler {
 	}
 
 	public function request(NetworkSession $session, Closure $onACK, bool $immediate = false): void {
-		$timestamp = self::nextTimestamp();
+		// This should be a class member...
+		$cls = Closure::bind(function(): ?PromiseResolver {
+			if (empty($this->sendBuffer)) {
+				return null;
+			}
 
-		// todo: use internal
-		$packet = NetworkStackLatencyPacket::create($timestamp, false);
+			$this->sendBufferAckPromises[] = $resolver = new PromiseResolver();
 
-		$session->sendDataPacketWithReceipt($packet, $immediate)->onCompletion($onACK, function(): void {
-			// todo:
-		});
+			return $resolver;
+		}, $session, NetworkSession::class);
+
+
+		if ($cls === false) {
+			throw new RuntimeException("Closure::bind() failed");
+		}
+
+		if (($resolver = ($cls)()) !== null) {
+			$resolver->getPromise()->onCompletion($onACK, fn() => null);
+		} else {
+			$timestamp = self::nextTimestamp();
+			$packet = NetworkStackLatencyPacket::create($timestamp, false);
+
+			$session->sendDataPacketWithReceipt($packet, $immediate)->onCompletion($onACK, fn() => null);
+		}
 	}
 
 	public static function nextTimestamp(): int {

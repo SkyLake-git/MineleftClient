@@ -23,7 +23,7 @@ class PlayerDebuggingProfile {
 		private readonly MineleftClient $mineleftClient,
 		private readonly Player         $player
 	) {
-		$this->option = new MineleftDebugOption(true);
+		$this->option = new MineleftDebugOption(false);
 		$this->logger = new PrefixedLogger($this->mineleftClient->getSession()->getLogger(), "Debugging: {$this->player->getName()}");
 		$this->virtualEntity = null;
 	}
